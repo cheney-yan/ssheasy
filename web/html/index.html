@@ -3,6 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- Apply the saved theme before first paint to avoid a flash. -->
+    <script>try{var __t=localStorage.getItem('theme');if(__t)document.documentElement.setAttribute('data-theme',__t);}catch(e){}</script>
 
     <!-- PWA: installable web app -->
     <link rel="manifest" href="manifest.webmanifest" />
@@ -783,8 +785,39 @@ window.onload = function() {
     if (typeof notReady === 'function') $('#conBtn').prop('disabled', notReady());
   }
 
+  // Theme (dark default / light), persisted; labels show the action.
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    try { localStorage.setItem('theme', t); } catch (e) {}
+    document.querySelectorAll('.theme-toggle').forEach(function(b) { b.textContent = (t === 'light' ? 'Dark' : 'Light'); });
+    document.querySelectorAll('.theme-toggle-panel').forEach(function(b) { b.textContent = (t === 'light' ? 'Dark mode' : 'Light mode'); });
+  }
+  toggleTheme = function() {
+    var cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    applyTheme(cur === 'light' ? 'dark' : 'light');
+  };
+
+  // Warn before an accidental refresh/close drops a live session ("New
+  // connection" sets __intentionalReload to skip the prompt).
+  window.addEventListener('beforeunload', function(e) {
+    if (window.__sshConnected && !window.__intentionalReload) { e.preventDefault(); e.returnValue = ''; }
+  });
+  // The browser's own reload/close prompt can't be reworded, but we can catch
+  // the common keyboard refresh (Cmd/Ctrl+R, F5) and show our own message.
+  document.addEventListener('keydown', function(e) {
+    var isReload = ((e.key === 'r' || e.key === 'R') && (e.metaKey || e.ctrlKey)) || e.key === 'F5';
+    if (isReload && window.__sshConnected) {
+      e.preventDefault();
+      if (window.confirm('This will drop the SSH connection. Reload anyway?')) {
+        window.__intentionalReload = true;
+        location.reload();
+      }
+    }
+  }, true);
+
   $(document).ready(function(){
     $('#conBtn').prop('disabled',true);
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark');
     $('.auth-tab').on('click', function() { setAuthMethod($(this).data('method')); });
     var savedMethod = 'password';
     try { savedMethod = localStorage.getItem('authMethod') || 'password'; } catch (e) {}
@@ -834,12 +867,28 @@ window.onload = function() {
         --border: #27272a;      /* zinc-800 */
         --fg: #fafafa;          /* zinc-50 */
         --muted: #a1a1aa;       /* zinc-400 */
-        --accent: #22c55e;      /* green-500 */
-        --accent-hover: #16a34a;/* green-600 */
+        --accent: #fafafa;      /* shadcn primary (near-white) */
+        --accent-hover: #e4e4e7;/* zinc-200 */
+        --accent-fg: #18181b;   /* text on the primary button */
         --danger: #ef4444;      /* red-500 */
-        --ring: rgba(34,197,94,.40);
+        --ring: rgba(250,250,250,.30);
         --radius: 8px;
       }
+      /* Light theme (shadcn zinc light), toggled via data-theme on <html>. */
+      :root[data-theme="light"] {
+        --bg: #ffffff;
+        --panel: #ffffff;
+        --elevated: #f4f4f5;    /* zinc-100 */
+        --border: #e4e4e7;      /* zinc-200 */
+        --fg: #09090b;
+        --muted: #71717a;       /* zinc-500 */
+        --accent: #18181b;      /* near-black primary */
+        --accent-hover: #27272a;
+        --accent-fg: #fafafa;   /* white text on the primary */
+        --danger: #dc2626;
+        --ring: rgba(24,24,27,.22);
+      }
+      :root[data-theme="light"] #connectOverlay { background: rgba(244,244,245,.85); }
       html { height: 100%; overflow: hidden; }
       body {
         height: 100vh;
@@ -929,7 +978,7 @@ window.onload = function() {
 
       .connect-btn {
         width: 100%; padding: .65rem; border: none; border-radius: 8px;
-        background: var(--accent); color: #fff; font-size: 1rem; cursor: pointer;
+        background: var(--accent); color: var(--accent-fg); font-weight: 600; font-size: 1rem; cursor: pointer;
       }
       .connect-btn:hover:not(:disabled) { background: var(--accent-hover); }
       .connect-btn:disabled { opacity: .5; cursor: not-allowed; }
@@ -963,7 +1012,7 @@ window.onload = function() {
         user-select: none;
         transition: background .15s, opacity .15s;
       }
-      #fab:hover { background: var(--accent); opacity: 1; }
+      #fab:hover { background: var(--elevated); border-color: var(--fg); opacity: 1; }
       #fab.dragging { cursor: grabbing; opacity: 1; transition: none; }
 
       /* --- Right-side operations drawer --- */
@@ -1080,7 +1129,13 @@ window.onload = function() {
       #historyList .hist-del:hover { border-color: var(--danger); color: var(--danger); }
 
       /* --- shadcn-ish polish: consistent radius, focus rings, soft shadow --- */
-      #connectCard { box-shadow: 0 12px 32px rgba(0,0,0,.55); }
+      #connectCard { box-shadow: 0 12px 32px rgba(0,0,0,.55); position: relative; }
+      .theme-toggle {
+        position: absolute; top: 14px; right: 14px;
+        background: transparent; border: 1px solid var(--border); color: var(--muted);
+        border-radius: var(--radius); padding: 4px 9px; font-size: .7rem; cursor: pointer;
+      }
+      .theme-toggle:hover { color: var(--fg); border-color: var(--fg); }
       .form-control, .connect-btn, .panel-btn, .hist-target, .hist-del { border-radius: var(--radius); }
       .form-control { transition: border-color .12s ease, box-shadow .12s ease; }
       .form-control:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
@@ -1088,11 +1143,68 @@ window.onload = function() {
       .auth-tab:focus-visible, .hist-target:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring); }
       .panel-btn { transition: border-color .12s ease, background .12s ease; }
 
-      /* Terminal search: bright matches + a yellow glow on the active one. */
+      /* Terminal search: bright translucent matches; the active one glows. */
       .xterm-decoration { border-radius: 2px; }
       .xterm-decoration.xterm-find-active-result-decoration {
-        box-shadow: 0 0 0 1px #fff200, 0 0 8px 2px rgba(255,230,0,.75);
+        box-shadow: 0 0 0 1px #fff200, 0 0 9px 2px rgba(255,230,0,.8);
       }
+
+      /* ===== Unified controls: one consistent size & style for everything ===== */
+      :root { --control-h: 36px; }
+      /* inputs */
+      .form-control {
+        height: var(--control-h); padding: 0 12px; font-size: .875rem; box-sizing: border-box;
+      }
+      textarea.form-control { height: auto; min-height: 76px; padding: 8px 12px; line-height: 1.4; }
+      /* shared button box — applies to every button variant */
+      .connect-btn, .panel-btn, .auth-tab,
+      .modal .btn, .theme-toggle, #historyList .hist-del {
+        height: var(--control-h); box-sizing: border-box;
+        padding: 0 14px; font-size: .875rem; font-weight: 500; line-height: 1;
+        border-radius: var(--radius); border: 1px solid transparent;
+        display: inline-flex; align-items: center; justify-content: center;
+        cursor: pointer; transition: background .12s ease, border-color .12s ease, color .12s ease;
+        font-family: inherit;
+      }
+      /* primary (Connect + modal primary) */
+      .connect-btn, .modal .btn-primary {
+        width: 100%; background: var(--accent); color: var(--accent-fg); border-color: transparent;
+      }
+      .modal .btn-primary { width: auto; }
+      .connect-btn:hover:not(:disabled), .modal .btn-primary:hover { background: var(--accent-hover); }
+      .connect-btn:disabled { opacity: .5; cursor: not-allowed; }
+      /* secondary / outline (drawer items, modal secondary, history delete, toggle) */
+      .panel-btn, .modal .btn-secondary, #historyList .hist-del, .theme-toggle {
+        background: transparent; border-color: var(--border); color: var(--fg);
+      }
+      .panel-btn { width: 100%; }
+      .panel-btn:hover, .modal .btn-secondary:hover, .theme-toggle:hover { background: var(--elevated); }
+      .panel-btn.danger:hover, #historyList .hist-del:hover {
+        background: transparent; border-color: var(--danger); color: var(--danger);
+      }
+      /* ghost links (Create key / Learn more / file picker) */
+      .modal .btn-link, #connectOverlay .btn-link, .file-link {
+        background: transparent; border-color: transparent; color: var(--accent); text-decoration: none;
+      }
+      .modal .btn-link:hover, .file-link:hover { text-decoration: underline; }
+      /* the small search arrows are square */
+      .panel-search .panel-btn { width: var(--control-h); flex: 0 0 auto; padding: 0; }
+      /* segmented tabs sit inside their track, so a touch shorter */
+      .auth-tabs { padding: 4px; }
+      .auth-tab { height: calc(var(--control-h) - 8px); border: none; }
+      .auth-tab.active { background: var(--elevated); }
+      /* connect-card theme toggle: small, in the corner */
+      .theme-toggle { position: absolute; top: 14px; right: 14px; height: 28px; padding: 0 10px; font-size: .72rem; color: var(--muted); }
+      .theme-toggle:hover { color: var(--fg); border-color: var(--fg); }
+
+      /* ===== Modals match the app theme (Bootstrap defaults to white) ===== */
+      .modal-content { background: var(--panel); color: var(--fg); border: 1px solid var(--border); border-radius: 12px; }
+      .modal-header, .modal-footer { border-color: var(--border); }
+      .modal-title { font-size: 1rem; font-weight: 600; }
+      .modal .form-control { background: var(--bg); color: var(--fg); border-color: var(--border); }
+      .modal .close { color: var(--muted); text-shadow: none; opacity: 1; }
+      .modal .close:hover { color: var(--fg); }
+      .modal-body code { color: var(--fg); }
 </style>
 </head>
   <body>
@@ -1271,6 +1383,7 @@ window.onload = function() {
     <!-- Connect card: a centered overlay shown before a session is live. -->
     <div id="connectOverlay">
       <div id="connectCard">
+        <button type="button" class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark"></button>
         <h1>python3</h1>
         <div id="headerRow">
           <div id="msg" class="alert alert-primary" role="alert"></div>
@@ -1346,7 +1459,8 @@ window.onload = function() {
         <button id="toggleFileBrowserBtn" type="button" class="panel-btn">Show Files</button>
         <button type="button" class="panel-btn" onclick="toggleFullScreen();">Toggle Fullscreen</button>
         <button type="button" class="panel-btn" onclick="downloadHistory('session.txt');" title="Download the session output">Download session log</button>
-        <button type="button" class="panel-btn danger" onclick="location.reload();">New connection</button>
+        <button type="button" class="panel-btn theme-toggle-panel" onclick="toggleTheme()">Theme</button>
+        <button type="button" class="panel-btn danger" onclick="window.__intentionalReload=true; location.reload();">New connection</button>
       </div>
       <div id="fileBrowserRow" class="d-none">
         <div class="iframe-container">
@@ -1370,7 +1484,11 @@ window.onload = function() {
           // glyphs; the trailing color-emoji fonts (Apple/Segoe/Noto) supply
           // full-color emoji on each platform.
           fontFamily: "'JetBrainsMono Nerd Font Mono', 'MesloLGS NF', 'Cascadia Code', 'Fira Code', Menlo, Monaco, 'Ubuntu Mono', monospace, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji'",
-          fontSize: 14
+          fontSize: 14,
+          // The active search match is the terminal selection; colour it black
+          // text on yellow so it's clearly readable (the search addon can't
+          // recolour matched glyphs itself).
+          theme: { selectionBackground: '#ffd600', selectionForeground: '#000000' },
         });
         term.loadAddon(new WebLinksAddon.WebLinksAddon());
         fitAddon = new FitAddon.FitAddon(); // Initialize the shared fitAddon
@@ -1416,11 +1534,13 @@ window.onload = function() {
       // match (stepped through with the up/down buttons) gets a yellow glow
       // (see the .xterm-decoration-top CSS). Required ruler colors must be set
       // for the decorations to render at all.
+      // Other matches: translucent yellow (text stays readable). The active
+      // match is the terminal selection (black on yellow, via the theme above),
+      // so we omit activeMatchBackground and let the decoration only add the
+      // glow (see the .xterm-find-active-result-decoration CSS).
       var SEARCH_DECORATIONS = {
         matchBackground: '#ffd60066',
         matchOverviewRuler: '#ffd600',
-        activeMatchBackground: '#ffe680',
-        activeMatchBorder: '#ffe600',
         activeMatchColorOverviewRuler: '#fff200',
       };
       function termFind(forward, incremental) {
