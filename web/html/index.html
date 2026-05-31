@@ -813,10 +813,7 @@ window.onload = function() {
     var isReload = ((e.key === 'r' || e.key === 'R') && (e.metaKey || e.ctrlKey)) || e.key === 'F5';
     if (isReload && window.__sshConnected) {
       e.preventDefault();
-      if (window.confirm('This will drop the SSH connection. Reload anyway?')) {
-        window.__intentionalReload = true;
-        location.reload();
-      }
+      $('#reloadWarnModal').modal('show'); // custom red warning instead of the native confirm
     }
   }, true);
 
@@ -1183,6 +1180,8 @@ window.onload = function() {
         width: 100%; background: var(--accent); color: var(--accent-fg); border-color: transparent;
       }
       .modal .btn-primary { width: auto; }
+      .modal .btn-danger { background: var(--danger); color: #fff; border-color: transparent; }
+      .modal .btn-danger:hover { filter: brightness(1.1); }
       .connect-btn:hover:not(:disabled), .modal .btn-primary:hover { background: var(--accent-hover); }
       .connect-btn:disabled { opacity: .5; cursor: not-allowed; }
       /* secondary / outline (drawer items, modal secondary, history delete, toggle) */
@@ -1378,6 +1377,26 @@ window.onload = function() {
               <div class="modal-footer">
                 <button type="button" class="btn btn-primary" onclick="addReverseForward();">Add</button>
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="reloadWarnModal" class="modal" tabindex="-1" role="dialog">
+          <div class="modal-dialog" role="document">
+            <div class="modal-content">
+              <div class="modal-body" style="text-align:center; padding:1.6rem 1.5rem .5rem;">
+                <svg class="warn-logo" width="44" height="44" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 2.5 22 20.5 H2 Z" fill="#ef4444"/>
+                  <rect x="11" y="9" width="2" height="6" rx="1" fill="#fff"/>
+                  <rect x="11" y="16.5" width="2" height="2" rx="1" fill="#fff"/>
+                </svg>
+                <h5 style="margin:.7rem 0 .35rem; font-weight:600;">Reload will disconnect</h5>
+                <p style="color:var(--muted); margin:0;">Refreshing the page drops your live SSH session.</p>
+              </div>
+              <div class="modal-footer" style="justify-content:center;">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Stay connected</button>
+                <button type="button" class="btn btn-danger" data-dismiss="modal" onclick="window.__intentionalReload=true; location.reload();">Reload &amp; disconnect</button>
               </div>
             </div>
           </div>
