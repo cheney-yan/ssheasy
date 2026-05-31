@@ -4,6 +4,6 @@
 # runtime artifacts
 proxy/logs/
 proxy/proxy
-ssh_conf/logs/
-ssh_conf/ssh_host_keys/
-ssh_conf/sshd.pid
+test/ssh_conf/logs/
+test/ssh_conf/ssh_host_keys/
+test/ssh_conf/sshd.pid

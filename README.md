@@ -47,14 +47,19 @@ Use `/connect?host=HOST&port=PORT&user=USER&password=PASSWORD` for initiating co
 
 ## Testing
 
-For testing docker-compose can set up an sshd in a separate container (opt-in
-via the `test` profile: `docker compose --profile test up`). After starting up
-the stack open http://localhost:8081 in your browser and use the host testssh
-with user root and password root.
+Test SSH servers live in `test/docker-compose.yaml`, run as an opt-in overlay
+on top of the main stack (from the repo root):
+
+```
+docker compose -f docker-compose.yaml -f test/docker-compose.yaml up
+```
+
+Then open http://localhost:8081 in your browser and connect to host `testssh`
+with user `root` and password `root`.
 
 ### Testing Webauthn
 
-After building the project and creating a webauthn key copy the displayed public key to the `ssh_conf/authorized_keys` file and start the testopenssh service in the docker compose if you have not started it yet. User name is `linuxserver.io` hostname: `testopenssh` port: `2222`.  
+After building the project and creating a webauthn key, copy the displayed public key into `test/ssh_conf/.ssh/authorized_keys` and start the `testopenssh` service (the test overlay above). User name is `linuxserver.io`, hostname `testopenssh`, port `2222`.
 
 ## Project structure
 

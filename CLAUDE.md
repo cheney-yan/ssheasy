@@ -95,7 +95,8 @@ break the `/portforward` logic) *and* does network-first offline caching.
 ```bash
 # Full stack (build WASM + proxy image, run proxy + cloudflared)
 docker compose build proxy && docker compose up -d
-docker compose --profile test up        # also start test sshd fixtures (testssh, testopenssh)
+# opt-in test SSH servers (testssh root/root, testopenssh for WebAuthn) as an overlay:
+docker compose -f docker-compose.yaml -f test/docker-compose.yaml up
 
 # Build the WASM client locally (from web/)
 cd web && GOOS=js GOARCH=wasm go build -o main.wasm

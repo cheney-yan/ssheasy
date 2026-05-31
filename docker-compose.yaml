@@ -50,15 +50,5 @@ services:
     depends_on:
       - proxy
 
-  # --- Test fixtures (opt-in): docker compose --profile test up ---
-  testssh:
-    image: rastasheep/ubuntu-sshd:18.04
-    profiles: ["test"]
-
-  testopenssh:
-    image: linuxserver/openssh-server
-    environment:
-      - LOG_STDOUT=true
-    volumes:
-      - ./ssh_conf:/config
-    profiles: ["test"]
+  # Test SSH servers live in test/docker-compose.yaml (opt-in overlay):
+  #   docker compose -f docker-compose.yaml -f test/docker-compose.yaml up

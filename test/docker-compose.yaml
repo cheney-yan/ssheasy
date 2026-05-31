@@ -1,0 +1,20 @@
+# Opt-in test fixtures — SSH servers the proxy can relay to. Run as an overlay
+# on top of the main stack, from the repo root, so they share its network:
+#
+#   docker compose -f docker-compose.yaml -f test/docker-compose.yaml up
+#
+#   testssh      plain sshd, user/password root/root  -> connect to host "testssh" port 22
+#   testopenssh  for the WebAuthn flow: paste your generated public key into
+#                test/ssh_conf/.ssh/authorized_keys, then connect as
+#                linuxserver.io@testopenssh:2222
+services:
+  testssh:
+    image: rastasheep/ubuntu-sshd:18.04
+
+  testopenssh:
+    image: linuxserver/openssh-server
+    environment:
+      - LOG_STDOUT=true
+    volumes:
+      # path is relative to the project dir (repo root, the first -f file)
+      - ./test/ssh_conf:/config
