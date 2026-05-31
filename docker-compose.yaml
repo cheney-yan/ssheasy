@@ -62,12 +62,3 @@ services:
     volumes:
       - ./ssh_conf:/config
     profiles: ["test"]
-
-  websockify:
-    image: jwnmulder/websockify
-    ports:
-      - 2222:2222
-    command:
-      - '2222'
-      - 'testssh:22'
-    profiles: ["test"]
