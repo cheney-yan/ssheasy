@@ -1223,8 +1223,8 @@ window.onload = function() {
           <div class="conn-extras">
             <details>
               <summary>Advanced</summary>
-              <label class="adv-row" title="Connect straight to host:port (a websocket endpoint must listen there) instead of relaying through this server.">
-                <input id="bypassProxyInp" type="checkbox"> Direct connection (no relay)
+              <label class="adv-row" title="Skip this server's relay and open a WebSocket straight to host:port. The browser can't speak raw TCP, so host:port must be a WebSocket-to-TCP bridge (e.g. websockify), not a plain sshd — and it needs TLS (wss) when this page is served over https.">
+                <input id="bypassProxyInp" type="checkbox"> Bypass relay (host runs a websocket bridge)
               </label>
             </details>
             <details>
