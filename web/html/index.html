@@ -721,8 +721,32 @@ window.onload = function() {
     });
   }
 
+  // Switch the visible auth field. The shared secret input (#passInp) doubles
+  // as the password or the key passphrase, so it is moved into the active pane
+  // and relabelled — keeping a single field that initConnection already reads.
+  function setAuthMethod(m) {
+    if (['password', 'key', 'webauthn'].indexOf(m) < 0) m = 'password';
+    $('.auth-tab').removeClass('active').filter('[data-method="' + m + '"]').addClass('active');
+    $('.auth-pane').removeClass('active');
+    var pass = $('#passInp');
+    if (m === 'key') {
+      pass.attr('placeholder', 'key passphrase (optional)');
+      $('#paneKey').append(pass).addClass('active');
+    } else {
+      pass.attr('placeholder', 'password');
+      $('#panePassword').prepend(pass);
+      $('#pane' + (m === 'webauthn' ? 'Webauthn' : 'Password')).addClass('active');
+    }
+    try { localStorage.setItem('authMethod', m); } catch (e) {}
+    if (typeof notReady === 'function') $('#conBtn').prop('disabled', notReady());
+  }
+
   $(document).ready(function(){
     $('#conBtn').prop('disabled',true);
+    $('.auth-tab').on('click', function() { setAuthMethod($(this).data('method')); });
+    var savedMethod = 'password';
+    try { savedMethod = localStorage.getItem('authMethod') || 'password'; } catch (e) {}
+    setAuthMethod(savedMethod);
     $('#hostInp').keyup(function(){ $('#conBtn').prop('disabled', notReady() ? true : false); })
     $('#portInp').keyup(function(){ $('#conBtn').prop('disabled', notReady() ? true : false); })
     $('#usrInp').keyup(function(){ $('#conBtn').prop('disabled', notReady() ? true : false); })
@@ -808,23 +832,62 @@ window.onload = function() {
       #connectOverlay.hidden { display: none; }
       #connectCard {
         width: 100%;
-        max-width: 620px;
+        max-width: 440px;
         background: var(--panel);
         border: 1px solid var(--border);
         border-radius: 12px;
-        padding: 22px 22px 12px;
+        padding: 22px;
         box-shadow: 0 16px 48px rgba(0,0,0,.5);
       }
       #connectCard h1 {
-        font-size: 1.05rem;
+        font-size: 1.1rem;
         font-weight: 600;
-        margin: 0 0 16px;
+        margin: 0 0 18px;
         letter-spacing: .3px;
+        text-align: center;
       }
       #connectCard .form-control { background: #0d1117; border-color: var(--border); color: var(--fg); }
       #connectCard .form-control::placeholder { color: #6e7681; }
       #connectOverlay .btn-link { color: #58a6ff; }
-      #footerRow { margin-top: 10px; font-size: .72rem; color: #6e7681; text-align: center; }
+      #footerRow { margin-top: 16px; font-size: .72rem; color: #6e7681; text-align: center; }
+
+      /* user @ host : port */
+      .conn-id { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+      .conn-id .sep { color: #6e7681; }
+      .conn-id #usrInp { flex: 0 0 30%; }
+      .conn-id #hostInp { flex: 1 1 auto; min-width: 0; }
+      .conn-id #portInp { flex: 0 0 70px; text-align: center; -moz-appearance: textfield; }
+
+      /* segmented auth-method selector */
+      .auth-tabs {
+        display: flex; gap: 4px; padding: 3px; margin-bottom: 12px;
+        background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+      }
+      .auth-tab {
+        flex: 1; padding: 7px 0; border: none; border-radius: 6px;
+        background: transparent; color: #8b949e; font-size: .85rem; cursor: pointer;
+      }
+      .auth-tab:hover { color: var(--fg); }
+      .auth-tab.active { background: #21262d; color: var(--fg); }
+      .auth-pane { display: none; margin-bottom: 14px; }
+      .auth-pane.active { display: block; }
+      .auth-pane textarea.form-control { resize: vertical; }
+      .file-link { display: inline-block; margin-top: 8px; color: #58a6ff; cursor: pointer; font-size: .82rem; }
+      .wa-links { margin-top: 8px; }
+      .wa-links .btn-link { padding: 0 12px 0 0; font-size: .82rem; }
+
+      .connect-btn {
+        width: 100%; padding: .65rem; border: none; border-radius: 8px;
+        background: var(--accent); color: #fff; font-size: 1rem; cursor: pointer;
+      }
+      .connect-btn:hover:not(:disabled) { background: var(--accent-hover); }
+      .connect-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+      .conn-extras { margin-top: 16px; font-size: .85rem; }
+      .conn-extras details + details { margin-top: 4px; }
+      .conn-extras summary { cursor: pointer; color: #8b949e; padding: 4px 0; outline: none; }
+      .conn-extras summary:hover { color: var(--fg); }
+      .adv-row { display: flex; align-items: center; gap: 7px; color: var(--fg); margin: 8px 0 4px; font-size: .85rem; }
 
       /* --- Floating toggle button (visible once connected) --- */
       #fab {
@@ -1121,39 +1184,53 @@ window.onload = function() {
           <div id="errMsg" class="alert alert-danger" role="alert"></div>
         </div>
         <div id="conPan">
-          <div class="row" style="margin: 0;">
-            <input id="usrInp" type="text" placeholder="User" class="form-control col-3" value="root">
-            <input id="hostInp" type="text" placeholder="Host" class="form-control col-5" value="">
-            <input id="portInp" type="number" placeholder="Port" class="form-control col-2" value="22">
-            <div class="col-2">
-              <label title="If checked the connection goes directly to the provided host and port, where a websocket endpoint is expected to listen, instead of being relayed.">
-                <input id="bypassProxyInp" type="checkbox" /> Direct
+          <!-- who & where: user @ host : port -->
+          <div class="conn-id">
+            <input id="usrInp" type="text" placeholder="user" class="form-control" value="root" autocomplete="username">
+            <span class="sep">@</span>
+            <input id="hostInp" type="text" placeholder="host" class="form-control" value="" autocomplete="off">
+            <span class="sep">:</span>
+            <input id="portInp" type="number" placeholder="22" class="form-control" value="22">
+          </div>
+
+          <!-- pick one authentication method; only its field is shown -->
+          <div class="auth-tabs" role="tablist">
+            <button type="button" class="auth-tab" data-method="password">Password</button>
+            <button type="button" class="auth-tab" data-method="key">Key</button>
+            <button type="button" class="auth-tab" data-method="webauthn">WebAuthn</button>
+          </div>
+
+          <div id="panePassword" class="auth-pane">
+            <input id="passInp" type="password" placeholder="password" class="form-control" value="" autocomplete="current-password">
+          </div>
+          <div id="paneKey" class="auth-pane">
+            <textarea id="pkInp" rows="3" placeholder="paste your private key" class="form-control"></textarea>
+            <label class="file-link">Select key file…<input id="pkFile" type="file" hidden></label>
+          </div>
+          <div id="paneWebauthn" class="auth-pane">
+            <select class="form-control" id="webauthnKeySelect">
+              <option selected>Select Webauthn Key</option>
+            </select>
+            <div class="wa-links">
+              <button type="button" class="btn btn-link" onclick="showCreatePublicKey();">Create key</button>
+              <a class="btn btn-link" href="webauthn.html" target="_blank">Learn more</a>
+            </div>
+          </div>
+
+          <button id="conBtn" type="button" class="connect-btn"
+            onclick="$('#conBtn').prop('disabled',true);showMsg('Connecting...');initConnection(term.rows, term.cols,$('#hostInp').val(),Number($('#portInp').val()),$('#usrInp').val(),$('#passInp').val(),$('#pkInp').val(), $('#bypassProxyInp').is(':checked'), false, $('#webauthnKeySelect').val() > -1);">Connect</button>
+
+          <div class="conn-extras">
+            <details>
+              <summary>Advanced</summary>
+              <label class="adv-row" title="Connect straight to host:port (a websocket endpoint must listen there) instead of relaying through this server.">
+                <input id="bypassProxyInp" type="checkbox"> Direct connection (no relay)
               </label>
-            </div>
-          </div>
-          <div class="row" style="margin: 0;">
-            <input id="passInp" type="password" placeholder="Password/Passphrase" class="form-control col-3" value="root">
-            <textarea id="pkInp" rows=1 placeholder="Private Key" class="form-control col-5"></textarea>
-            <label class="btn btn-link col-2">
-              Select key file <input id="pkFile" type="file" hidden>
-            </label>
-          </div>
-          <div class="row" style="margin: 0;">
-            <div class="form-group col-3 nopad">
-              <label for="webauthnKeySelect"></label>
-              <select class="form-control" id="webauthnKeySelect">
-                <option selected>Select Webauthn Key</option>
-              </select>
-            </div>
-            <button type="button" class="btn btn-link col-3" onclick="showCreatePublicKey();">Create Webauthn Key</button>
-            <div class="col-3">
-              <a type="button" class="btn btn-link col-3" href="webauthn.html" target="_blank">Learn more</a>
-            </div>
-            <button id="conBtn" type="button" class="btn btn-primary col-3"
-              onclick="$('#conBtn').prop('disabled',true);showMsg('Connecting...');initConnection(term.rows, term.cols,$('#hostInp').val(),Number($('#portInp').val()),$('#usrInp').val(),$('#passInp').val(),$('#pkInp').val(), $('#bypassProxyInp').is(':checked'), false, $('#webauthnKeySelect').val() > -1);">Connect</button>
-          </div>
-          <div id="historyListContainer">
-            <ul id="historyList"></ul>
+            </details>
+            <details>
+              <summary>Recent connections</summary>
+              <div id="historyListContainer"><ul id="historyList"></ul></div>
+            </details>
           </div>
         </div>
         <div id="footerRow">Python 3.12.0 (main) [GCC] on linux</div>
