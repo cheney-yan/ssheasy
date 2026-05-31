@@ -214,6 +214,8 @@ window.onload = function() {
 
   connected = function(status, home) {
     window.__sshConnected = true; // gate the predictive-echo overlay to live sessions
+    window.__reconnecting = false;
+    $('#disconnectBanner').removeClass('show'); // clear any "disconnected" banner
     saveHistory();
     // Reflect the live server in the URL as a plain-text permalink
     // (#user@host:port). The password is never put in the URL.
@@ -285,6 +287,8 @@ window.onload = function() {
           false,
           webauthnKey != -1
         );
+        $('#passInp').val('');   // ditch the secret once handed to the WASM
+        $('#pkInp').val('');
       } else {
         if(doConnect == "true") {
           showErr("Missing required connection parameters in URL.");
@@ -455,21 +459,38 @@ window.onload = function() {
     });
   }
 
-  showReconnect = function(errorMsg) {
-    $('#connLostMsg').html("The connection to your server was interrupted: " + errorMsg + "<br>Do you want to reconnect?")
-    $('#reconnectModal').modal('show')
+  // Connect, then immediately wipe the secret fields. initConnection received
+  // the password/key by value, so the WASM keeps what it needs and nothing
+  // sensitive lingers in the DOM.
+  connectNow = function() {
+    $('#conBtn').prop('disabled', true);
+    showMsg('Connecting...');
+    initConnection(term.rows, term.cols, $('#hostInp').val(), Number($('#portInp').val()),
+      $('#usrInp').val(), $('#passInp').val(), $('#pkInp').val(), false, false,
+      $('#webauthnKeySelect').val() > -1);
+    $('#passInp').val('');
+    $('#pkInp').val('');
   }
 
-  reconnect = function(shouldReconnect) {
-    if(shouldReconnect) {
-      initConnection(term.rows, term.cols,$('#hostInp').val(),Number($('#portInp').val()),$('#usrInp').val(),$('#passInp').val(),$('#pkInp').val(), false, false, $('#webauthnKeySelect').val() > -1);
-    }else {
-      $('#conPan').show();
-      $('#connectOverlay').removeClass('hidden');
-      $('#fab').hide();
-      $('#sidePanel').removeClass('open with-browser');
-      updateFileBrowserVisibility(false); // Hide file browser
-    }
+  showReconnect = function(errorMsg) {
+    window.__sshConnected = false;               // session is dead until reconnected
+    $('#disconnectBanner').addClass('show');
+  }
+
+  // Reconnect brings back the connect form (host/user/port prefilled) so the
+  // user re-enters their secret — we deliberately do NOT store the password.
+  reconnect = function() {
+    $('#disconnectBanner').removeClass('show');
+    $('#passInp').val('');          // never remember the password
+    $('#errMsg').hide();
+    $('#msg').hide();
+    $('#conPan').show();
+    $('#connectOverlay').removeClass('hidden');
+    $('#fab').hide();
+    $('#sidePanel').removeClass('open with-browser');
+    updateFileBrowserVisibility(false);
+    if (typeof notReady === 'function') $('#conBtn').prop('disabled', notReady());
+    setTimeout(function() { $('#passInp').focus(); }, 50);
   }
 
   showMsg = function(msg) {
@@ -479,6 +500,8 @@ window.onload = function() {
   } 
 
   showErr = function(msg) {
+    window.__reconnecting = false;
+    $('#disconnectBanner').removeClass('show');
     $('#msg').hide();
     $('#conPan').show();
     $('#connectOverlay').removeClass('hidden');
@@ -549,104 +572,6 @@ window.onload = function() {
     }).catch(err => {
     console.error('SW registration failed', err);
   });
-
-  // Handle messages from the Service Worker for intercepted fetches.
-  // The service worker posts messages with { type: 'FETCH_INTERCEPT', data: reqData }
-  // We call the Go `forward` function (exposed as `forward`) and return the response
-  // back to the service worker as { type: 'FETCH_INTERCEPT_RESPONSE', id, response }.
-  navigator.serviceWorker.addEventListener('message', async function(event) {
-    console.log('SW message received', event.data);
-    try {
-      const msg = event.data;
-      if (!msg || msg.type !== 'FETCH_INTERCEPT') return;
-      const req = msg.data || {};
-
-      // Build headers array expected by proxy.forward: [[name, value], ...]
-      const headersArr = [];
-      if (req.headers && typeof req.headers === 'object') {
-        for (const k of Object.keys(req.headers)) {
-          headersArr.push([k, req.headers[k]]);
-        }
-      }
-
-      // Prepare body as Uint8Array (forward expects a typed array for non-GET/HEAD)
-      let bodyUint8 = new Uint8Array(0);
-      if (req.body !== undefined && req.body !== null && req.body !== '') {
-        if (typeof req.body === 'string') {
-          bodyUint8 = new TextEncoder().encode(req.body);
-        } else if (req.body instanceof ArrayBuffer) {
-          bodyUint8 = new Uint8Array(req.body);
-        } else if (req.body instanceof Uint8Array) {
-          bodyUint8 = req.body;
-        } else {
-          // Fallback: stringify
-          bodyUint8 = new TextEncoder().encode(String(req.body));
-        }
-      }
-
-      const requestObj = {
-        id: req.id,
-        host: req.host,
-        ssheasyHost: window.location.host,
-        sshClientID: req.sshClientID,
-        method: req.method,
-        url: req.url,
-        headers: headersArr,
-        body: bodyUint8,
-      };
-
-      const postResponseToSW = resp => {
-        const payload = { type: 'FETCH_INTERCEPT_RESPONSE', id: req.id, response: resp };
-        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-          navigator.serviceWorker.controller.postMessage(payload);
-        } else {
-          // fallback to registration.active
-          navigator.serviceWorker.ready.then(reg => {
-            if (reg && reg.active) reg.active.postMessage(payload);
-          }).catch(() => {});
-        }
-      };
-
-      if (typeof forward !== 'function') {
-        postResponseToSW({ status: 500, body: 'forward not available', headers: [] });
-        return;
-      }
-
-      forward(requestObj, function(res) {
-        try {
-          postResponseToSW(res);
-        } catch (e) {
-          postResponseToSW({ status: 500, body: String(e), headers: [] });
-        }
-      });
-    } catch (err) {
-      console.error('Error handling SW fetch intercept message', err);
-    }
-  });
-
-
-  openWebTunel = function(url) {
-    var myID
-    fetch('/registerportforward')
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.text();
-        })
-        .then(data => {
-            console.log('Successfully registered port forward:', data);
-            myID = data;
-            if (myID == null || myID == "" ) {
-              console.error('client id cannot be tetrieved', myID);
-              return
-            }
-            window.open("/portforward/" + myID + "/" + url, '_blank').focus();
-        })
-        .catch(error => {
-            console.error('Error registering port forward:', error);
-        });
-  }
 
   // --- Reverse proxy (remote port forwarding) ---
   openReverseModal = function() {
@@ -838,6 +763,10 @@ window.onload = function() {
     $('#pkInp').keyup(function(){ $('#conBtn').prop('disabled', notReady() ? true : false); })
     $("#webauthnKeySelect").change(function() { $('#conBtn').prop('disabled', notReady() ? true : false); });
     $('#pkFile').change(pkFileOpen);
+    // Enter in any single-line connect field connects (when the form is ready).
+    $('#usrInp, #hostInp, #portInp, #passInp').on('keydown', function(e) {
+      if (e.key === 'Enter' && !$('#conBtn').prop('disabled')) { e.preventDefault(); $('#conBtn').click(); }
+    });
     // Terminal search: highlight as you type; Enter = next, Shift+Enter = prev.
     $('#searchTxt').on('input', function() { termFind(true, true); });
     $('#searchTxt').on('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); termFind(!e.shiftKey, false); } });
@@ -1152,6 +1081,26 @@ window.onload = function() {
       .auth-tab:focus-visible, .hist-target:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring); }
       .panel-btn { transition: border-color .12s ease, background .12s ease; }
 
+      /* Persistent disconnect banner: slides down from the top, stays until reconnected. */
+      #disconnectBanner {
+        position: fixed; top: 0; left: 0; right: 0; z-index: 2000;
+        display: flex; align-items: center; gap: 10px;
+        padding: 9px 16px; background: var(--danger); color: #fff; font-size: .875rem;
+        box-shadow: 0 2px 12px rgba(0,0,0,.45);
+        transform: translateY(-110%); transition: transform .25s ease;
+      }
+      #disconnectBanner.show { transform: translateY(0); }
+      #disconnectBanner .dc-dot { width: 9px; height: 9px; border-radius: 50%; background: #fff; animation: dcpulse 1.2s ease-in-out infinite; }
+      @keyframes dcpulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+      #disconnectBanner .dc-actions { margin-left: auto; display: flex; gap: 8px; }
+      #disconnectBanner .dc-btn {
+        height: 30px; padding: 0 12px; border-radius: var(--radius); cursor: pointer;
+        font-size: .82rem; font-weight: 500; border: 1px solid rgba(255,255,255,.6);
+        background: #fff; color: var(--danger);
+      }
+      #disconnectBanner .dc-btn.ghost { background: transparent; color: #fff; }
+      #disconnectBanner .dc-btn:hover { opacity: .9; }
+
       /* Terminal search: bright translucent matches; the active one glows. */
       .xterm-decoration { border-radius: 2px; }
       .xterm-decoration.xterm-find-active-result-decoration {
@@ -1219,6 +1168,13 @@ window.onload = function() {
 </style>
 </head>
   <body>
+      <div id="disconnectBanner">
+        <span class="dc-dot"></span>
+        <span id="disconnectMsg">Remote disconnected</span>
+        <span class="dc-actions">
+          <button type="button" class="dc-btn" onclick="reconnect();">Reconnect</button>
+        </span>
+      </div>
       <div id="fingerprintModal" class="modal" tabindex="-1" role="dialog">
           <div class="modal-dialog" role="document">
             <div class="modal-content">
@@ -1307,46 +1263,28 @@ window.onload = function() {
           </div>
         </div>
 
-        <div id="forwardModal" class="modal" tabindex="-1" role="dialog">
-          <div class="modal-dialog" role="document">
-            <div class="modal-content">
-              <div class="modal-header">
-                <h5 class="modal-title">Open URL</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                  <span aria-hidden="true">&times;</span>
-                </button>
-              </div>
-              <div  class="modal-body">
-                <p>Open a URL reachable from the remote endpoint in a new browser tab. <br>
-                  After specifying the target URL and clicking Open it will be opened in a new tab.</p>
-                <p>Always specify a full URL with protocol (http:// or https://). If you provided a hostname and there's an issue, try an IP address instead.</p>
-                <p>NOTE: this feature is in beta; some pages may fail to load or render partially.</p>
-                <input id="forwardUrlTxt" type="text" placeholder="local or remote url eg. http://localhost:8080" class="form-control" >
-                
-              </div>
-              <div class="modal-footer">
-                <button type="button" class="btn btn-primary" data-dismiss="modal"   onclick="openWebTunel($('#forwardUrlTxt').val());">Open</button>
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <div id="reverseModal" class="modal" tabindex="-1" role="dialog">
           <div class="modal-dialog" role="document">
             <div class="modal-content">
               <div class="modal-header">
-                <h5 class="modal-title">Reverse proxy</h5>
+                <h5 class="modal-title">Use this browser as a reverse proxy</h5>
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                   <span aria-hidden="true">&times;</span>
                 </button>
               </div>
               <div class="modal-body">
-                <p>Open a port on the remote host that forwards every incoming connection
-                  back through this session to a target.</p>
-                <p style="font-size:.85rem;color:var(--muted)">The target is dialed from the server side, not your browser.
-                  To reach a service on the machine running this app's Docker host, use
-                  <code>host.docker.internal</code> as the host; for another container use its service name.</p>
+                <p>Give the remote host access to a service that <b>this side</b> can reach,
+                  by opening a port on the remote that tunnels back through this session.</p>
+                <p style="font-size:.85rem;color:var(--muted)">
+                  <b>Example:</b> this side can reach Ollama at <code>ollama:11434</code>, but the
+                  remote can't. Set <b>Target</b> = <code>ollama</code> / <code>11434</code> and
+                  <b>Remote port</b> = <code>11434</code>. Now on the remote,
+                  <code>curl http://localhost:11434</code> reaches Ollama through this proxy.
+                </p>
+                <p style="font-size:.8rem;color:var(--muted)">
+                  The target is dialed from this server; to reach a service on its Docker host use
+                  <code>host.docker.internal</code>, or another container's service name.
+                </p>
                 <div class="form-group row">
                   <label class="col-sm-4 col-form-label">Remote port</label>
                   <div class="col-sm-8">
@@ -1438,10 +1376,10 @@ window.onload = function() {
           </div>
 
           <div id="panePassword" class="auth-pane">
-            <input id="passInp" type="password" placeholder="password" class="form-control" value="" autocomplete="current-password">
+            <input id="passInp" type="password" placeholder="password" class="form-control" value="" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true">
           </div>
           <div id="paneKey" class="auth-pane">
-            <textarea id="pkInp" rows="3" placeholder="paste your private key" class="form-control"></textarea>
+            <textarea id="pkInp" rows="3" placeholder="paste your private key" class="form-control" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true"></textarea>
             <label class="file-link">Select key file…<input id="pkFile" type="file" hidden></label>
           </div>
           <div id="paneWebauthn" class="auth-pane">
@@ -1454,8 +1392,7 @@ window.onload = function() {
             </div>
           </div>
 
-          <button id="conBtn" type="button" class="connect-btn"
-            onclick="$('#conBtn').prop('disabled',true);showMsg('Connecting...');initConnection(term.rows, term.cols,$('#hostInp').val(),Number($('#portInp').val()),$('#usrInp').val(),$('#passInp').val(),$('#pkInp').val(), false, false, $('#webauthnKeySelect').val() > -1);">Connect</button>
+          <button id="conBtn" type="button" class="connect-btn" onclick="connectNow();">Connect</button>
 
           <div class="conn-extras">
             <details>
@@ -1485,13 +1422,12 @@ window.onload = function() {
           <button type="button" class="panel-btn" style="width:auto" onclick="termFind(true)">↓</button>
         </div>
         <label class="panel-search-opts"><input type="checkbox" id="matchCaseChb"> Match case</label>
-        <button type="button" class="panel-btn" onclick="$('#forwardModal').modal('show');">Open URL</button>
         <button type="button" class="panel-btn" onclick="openReverseModal();">Reverse proxy</button>
         <button id="toggleFileBrowserBtn" type="button" class="panel-btn">Show Files</button>
         <button type="button" class="panel-btn" onclick="toggleFullScreen();">Toggle Fullscreen</button>
         <button type="button" class="panel-btn" onclick="downloadHistory('session.txt');" title="Download the session output">Download session log</button>
         <button type="button" class="panel-btn theme-toggle-panel" onclick="toggleTheme()">Theme</button>
-        <button type="button" class="panel-btn danger" onclick="window.__intentionalReload=true; location.reload();">New connection</button>
+        <button type="button" class="panel-btn" onclick="window.open(location.href, '_blank');">New connection</button>
       </div>
       <div id="fileBrowserRow" class="d-none">
         <div class="iframe-container">
