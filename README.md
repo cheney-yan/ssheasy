@@ -47,19 +47,9 @@ Use `/connect?host=HOST&port=PORT&user=USER&password=PASSWORD` for initiating co
 
 ## Testing
 
-Test SSH servers live in `test/docker-compose.yaml`, run as an opt-in overlay
-on top of the main stack (from the repo root):
+Unit tests live in the proxy module: `cd proxy && go test ./...`.
 
-```
-docker compose -f docker-compose.yaml -f test/docker-compose.yaml up
-```
-
-Then open http://localhost:8081 in your browser and connect to host `testssh`
-with user `root` and password `root`.
-
-### Testing Webauthn
-
-After building the project and creating a webauthn key, copy the displayed public key into `test/ssh_conf/.ssh/authorized_keys` and start the `testopenssh` service (the test overlay above). User name is `linuxserver.io`, hostname `testopenssh`, port `2222`.
+End-to-end testing is done by deploying the stack and connecting to a real host.
 
 ## Project structure
 

@@ -60,13 +60,19 @@ Hardening: a uniform 1s verify delay and a per-IP lockout (10 fails → 24h).
 `authMiddleware` gates everything except `/auth/*` and `isPublicAsset` (the PWA
 manifest/icons, which browsers fetch without credentials).
 
-### PWA / disguise
+### PWA / disguise / theme
 
 The app is an installable PWA branded **"python3"** to hide its SSH nature.
 **Keep all user-facing strings free of "ssh"/"sftp"/"tunnel"** (titles, labels,
-manifest, modal copy, WebAuthn RP name). `web/html/sw.js` is **dual-purpose**:
-it tunnels `fetch` through the SSH connection for the "Open URL" feature (do not
-break the `/portforward` logic) *and* does network-first offline caching.
+manifest, modal copy, WebAuthn RP name). `web/html/sw.js` does **network-first
+offline caching only** (the old `/portforward` "Open URL" tunneling was removed).
+
+UI is shadcn-style mono dark with a light theme. Colours come from CSS tokens in
+`:root` (and `:root[data-theme="light"]`); the theme is toggled by setting
+`data-theme` on `<html>`, persisted in `localStorage`, and applied by a tiny
+`<head>` script before first paint. A single unified control style (one height/
+radius/font) covers buttons, inputs, tabs, and the Bootstrap modals — keep new
+controls on that system rather than adding bespoke styles.
 
 ## Decisions / invariants (don't regress these)
 
@@ -89,14 +95,36 @@ break the `/portforward` logic) *and* does network-first offline caching.
 - Per-source connection rate limit (`proxy` `SRC_CONN_RATE`/`SRC_CONN_BURST`,
   default `off` in compose) — the old hardcoded 1/sec broke reverse-proxying
   many short connections.
+- **Never persist credentials.** `connectNow()` (and the URL auto-connect path)
+  pass the password/key to the WASM by value, then immediately blank the fields;
+  the password/key inputs have `autocomplete="off"`. Reconnect does NOT reuse the
+  password — it reopens the connect form to re-enter it.
+- **Host-key trust is TOFU** (`web/html` `showServerKey`): remembered keys live
+  in `localStorage` (`knownHosts`, plus `alwaysAcceptHostKey`); a remembered host
+  auto-connects, a *changed* key always warns. Auto-accept must reply via
+  `setTimeout` — Go calls `showServerKey` synchronously and only then waits on the
+  accept channel, so an inline reply deadlocks the WASM call.
+- **Connect-card auth tabs**: the single `#passInp` is both the password and the
+  key passphrase — JS moves it between the Password/Key panes and relabels it; the
+  active tab is remembered. Don't split it into two fields.
+- **Permalink**: on connect the URL hash becomes `#user@host:port` (no password);
+  on load that hash prefills the fields. "New connection" opens `location.href`
+  in a new tab to duplicate the window.
+- **Disconnect UX**: a stream read error calls `showReconnect`, which shows a
+  persistent one-line top banner (`#disconnectBanner`) with a Reconnect button —
+  not a modal, so the terminal stays usable. There is **no auto-reconnect**.
+- **Heartbeat**: transport-level only — yamux keepalive (~30s) on `/pm`, a 20s
+  WebSocket ping on legacy `/p`. There is **no SSH-level keepalive**
+  (`keepalive@openssh.com`), so an idle-timeout `sshd` can still drop a session.
+- Terminal **search** highlight: the active match is the xterm *selection*
+  (themed black-on-yellow) since the search addon can't recolour matched glyphs;
+  other matches use a translucent decoration.
 
 ## Commands
 
 ```bash
 # Full stack (build WASM + proxy image, run proxy + cloudflared)
 docker compose build proxy && docker compose up -d
-# opt-in test SSH servers (testssh root/root, testopenssh for WebAuthn) as an overlay:
-docker compose -f docker-compose.yaml -f test/docker-compose.yaml up
 
 # Build the WASM client locally (from web/)
 cd web && GOOS=js GOARCH=wasm go build -o main.wasm
@@ -110,7 +138,12 @@ Required env (see `.env.example`, copied to gitignored `.env`): `TUNNEL_TOKEN`,
 `TOTP_SEED` (base32, also add to an authenticator app), `SESSION_SECRET`.
 Optional: `SESSION_TTL`, `AUTH_DISABLED`, `OBFS_KEY`, `SRC_CONN_RATE`/`SRC_CONN_BURST`.
 
-There is no test runner for `web/` (WASM/DOM). End-to-end checks are done by
-building the proxy image, running it with a `testssh` container, and driving the
-page with headless Chrome over the DevTools Protocol (navigate, `Runtime.evaluate`
-to call `initConnection`/`reverseForward`, screenshot).
+## Testing
+
+Unit tests are proxy-side only: `cd proxy && go test ./...` (obfuscation
+round-trip for PSK + ECDH, TOTP vectors, rate limiter). There is no runner for
+`web/` (WASM/DOM), and there are no committed test fixtures.
+
+End-to-end/manual testing is done by the maintainer on their own server: deploy
+the stack (`docker compose build proxy && docker compose up -d`), log in with
+the authenticator code, and connect to a real host.
