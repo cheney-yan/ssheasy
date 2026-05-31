@@ -215,6 +215,11 @@ window.onload = function() {
   connected = function(status, home) {
     window.__sshConnected = true; // gate the predictive-echo overlay to live sessions
     saveHistory();
+    // Reflect the live server in the URL as a plain-text permalink
+    // (#user@host:port). The password is never put in the URL.
+    try {
+      history.replaceState(null, '', '#' + $('#usrInp').val() + '@' + $('#hostInp').val() + ':' + $('#portInp').val());
+    } catch (e) {}
     // Explicitly hide messages and ensure conPan is hidden before calculations
     $('#msg').html('').hide();
     $('#errMsg').hide();
@@ -822,6 +827,13 @@ window.onload = function() {
     var savedMethod = 'password';
     try { savedMethod = localStorage.getItem('authMethod') || 'password'; } catch (e) {}
     setAuthMethod(savedMethod);
+    // Permalink: prefill user/host/port from a #user@host:port URL hash.
+    var permatch = decodeURIComponent((location.hash || '').replace(/^#/, '')).match(/^([^@\s]+)@([^:\s]+):(\d+)$/);
+    if (permatch) {
+      $('#usrInp').val(permatch[1]);
+      $('#hostInp').val(permatch[2]);
+      $('#portInp').val(permatch[3]);
+    }
     $('#hostInp').keyup(function(){ $('#conBtn').prop('disabled', notReady() ? true : false); })
     $('#portInp').keyup(function(){ $('#conBtn').prop('disabled', notReady() ? true : false); })
     $('#usrInp').keyup(function(){ $('#conBtn').prop('disabled', notReady() ? true : false); })
