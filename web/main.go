@@ -232,7 +232,7 @@ func acceptFP(this js.Value, args []js.Value) interface{} {
 }
 func showFingerprint(hostname string, remote net.Addr, key ssh.PublicKey) error {
 	fp := FingerprintMD5(key)
-	js.Global().Call("showServerKey", fp)
+	js.Global().Call("showServerKey", hostname, fp)
 	a := <-fpAccepted
 	if !a {
 		return errors.New("user didn't accept host key")

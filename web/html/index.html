@@ -156,22 +156,59 @@ window.onload = function() {
       conStr = item.user + "@" + item.host + ":" + item.port
       var listItem = document.createElement("li");
       const el = document.createElement('div');
+      el.className = 'hist-target';
       el.addEventListener('click', lf(item));
-      el.title = conStr;
+      el.title = 'Connect to ' + conStr;
       el.appendChild(document.createTextNode(conStr));
       var deleteBtn = document.createElement("button");
-      deleteBtn.innerHTML = "X";
+      deleteBtn.className = 'hist-del';
+      deleteBtn.type = 'button';
+      deleteBtn.title = 'Remove from recent';
+      deleteBtn.setAttribute('aria-label', 'Remove ' + conStr);
+      deleteBtn.textContent = 'Delete';
       deleteBtn.addEventListener('click', df(i));
-      listItem.appendChild(deleteBtn);
       listItem.appendChild(el);
+      listItem.appendChild(deleteBtn);
       listContainer.appendChild(listItem);
     }
   }
 
-  showServerKey = function(key) {
-    $('#fingerprintMsg').html("Host key: " + key + " <br>Continue connecting?")
-    $('#fingerprintModal').modal('show')
+  // --- Host-key trust (TOFU, like SSH known_hosts) ---
+  // Remembered host keys live in localStorage["knownHosts"] = { host: key }.
+  // "Always accept" (localStorage["alwaysAcceptHostKey"]) auto-trusts NEW hosts
+  // but a changed key for a known host always prompts with a warning.
+  function knownHosts() { try { return JSON.parse(localStorage.getItem('knownHosts') || '{}'); } catch (e) { return {}; } }
+  function rememberHost(host, key) { var k = knownHosts(); k[host] = key; try { localStorage.setItem('knownHosts', JSON.stringify(k)); } catch (e) {} }
+  function htmlEsc(s) { return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&#34;'}[c]; }); }
+
+  showServerKey = function(host, key) {
+    window.__pendingHost = host;
+    window.__pendingKey = key;
+    // Auto-accept paths must defer acceptFingerprint: Go calls showServerKey
+    // synchronously and only waits on the accept channel after it returns, so
+    // replying inline would deadlock. setTimeout lets this call unwind first.
+    var accept = function() { setTimeout(function() { acceptFingerprint(true); }, 0); };
+    var known = knownHosts();
+    if (known[host] === key) { accept(); return; }                             // trusted, unchanged
+    var changed = known[host] != null && known[host] !== key;
+    if (!changed && localStorage.getItem('alwaysAcceptHostKey') === 'true') {   // new host, auto-trust
+      rememberHost(host, key); accept(); return;
+    }
+    if (changed) {
+      $('#fpWarn').show().html('⚠ The host key for <b>' + htmlEsc(host) + '</b> has CHANGED since you last trusted it. ' +
+        'This may be a man-in-the-middle attack — only continue if you expected this.');
+      $('#fpAlwaysBtn').hide();
+    } else {
+      $('#fpWarn').hide();
+      $('#fpAlwaysBtn').show();
+    }
+    $('#fingerprintMsg').html('Host: <code>' + htmlEsc(host) + '</code><br>Key fingerprint: <code>' + htmlEsc(key) + '</code>');
+    $('#fingerprintModal').modal('show');
   }
+
+  // Modal buttons (acceptFingerprint is exported from WASM).
+  fpRemember = function() { rememberHost(window.__pendingHost, window.__pendingKey); acceptFingerprint(true); }
+  fpAlways = function() { try { localStorage.setItem('alwaysAcceptHostKey', 'true'); } catch (e) {} rememberHost(window.__pendingHost, window.__pendingKey); acceptFingerprint(true); }
 
   connected = function(status, home) {
     window.__sshConnected = true; // gate the predictive-echo overlay to live sessions
@@ -182,6 +219,7 @@ window.onload = function() {
     $('#conPan').hide();
     $('#connectOverlay').addClass('hidden'); // reveal the full-screen terminal
     $('#fab').css('display', 'flex');         // expose the operations toggle
+    if (window.positionFab) window.positionFab(); // place it now that it has a size
     $('#conBtn').prop('disabled',false); // Re-enable connect button
 
     // The terminal layer is pinned to the viewport via CSS (position: fixed;
@@ -660,12 +698,6 @@ window.onload = function() {
     const fab = document.getElementById('fab');
     if (!fab) return;
 
-    // Restore a saved position, clamped into the current viewport.
-    try {
-      const p = JSON.parse(localStorage.getItem('fabPos') || 'null');
-      if (p) placeFab(p.left, p.top);
-    } catch (e) { /* ignore */ }
-
     function placeFab(left, top) {
       left = Math.min(window.innerWidth - fab.offsetWidth, Math.max(0, left));
       top = Math.min(window.innerHeight - fab.offsetHeight, Math.max(0, top));
@@ -674,6 +706,17 @@ window.onload = function() {
       fab.style.right = 'auto';
       fab.style.bottom = 'auto';
     }
+
+    // Apply the saved position when the button becomes visible (its size is 0
+    // while display:none, which would clamp it off-screen). With no saved
+    // position it keeps the CSS default (bottom-right). Exposed so connected()
+    // can call it the moment the FAB is shown.
+    window.positionFab = function() {
+      try {
+        const p = JSON.parse(localStorage.getItem('fabPos') || 'null');
+        if (p) placeFab(p.left, p.top);
+      } catch (e) { /* ignore */ }
+    };
 
     let dragging = false, moved = false, startX = 0, startY = 0, originX = 0, originY = 0;
 
@@ -990,18 +1033,42 @@ window.onload = function() {
         list-style-type: none;
         padding: 0;
         width: 100%;
-        max-height: 160px;
+        max-height: 180px;
         overflow-y: auto;
-        margin: 0;
+        margin: 6px 0 0;
       }
-      li { display: flex; }
-      li button {
+      #historyList li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 2px 0;
+      }
+      #historyList .hist-target {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 7px 10px;
+        border-radius: 7px;
+        background: #0d1117;
+        border: 1px solid var(--border);
+        color: var(--fg);
+        font-size: .85rem;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #historyList .hist-target:hover { border-color: #58a6ff; }
+      #historyList .hist-del {
+        flex: 0 0 auto;
+        padding: 7px 10px;
+        border-radius: 7px;
         background: transparent;
-        color: #f85149;
-        margin-right: .5rem;
-        border-radius: 8px;
-        border: none;
+        border: 1px solid var(--border);
+        color: #8b949e;
+        font-size: .8rem;
+        cursor: pointer;
       }
+      #historyList .hist-del:hover { border-color: #f85149; color: #f85149; }
 </style>
 </head>
   <body>
@@ -1014,12 +1081,15 @@ window.onload = function() {
                   <span aria-hidden="true">&times;</span>
                 </button>
               </div>
-              <div id="fingerprintMsg" class="modal-body">
-                
+              <div class="modal-body">
+                <div id="fpWarn" style="display:none; color:#f85149; margin-bottom:.6rem;"></div>
+                <div id="fingerprintMsg"></div>
               </div>
               <div class="modal-footer">
-                <button type="button" class="btn btn-primary" data-dismiss="modal"   onclick="acceptFingerprint(true);">Yes</button>
                 <button type="button" class="btn btn-secondary" data-dismiss="modal" onclick="acceptFingerprint(false);">No</button>
+                <button type="button" class="btn btn-primary" data-dismiss="modal" onclick="acceptFingerprint(true);">Connect once</button>
+                <button id="fpRememberBtn" type="button" class="btn btn-primary" data-dismiss="modal" onclick="fpRemember();">Remember this host</button>
+                <button id="fpAlwaysBtn" type="button" class="btn btn-link" data-dismiss="modal" onclick="fpAlways();">Always accept</button>
               </div>
             </div>
           </div>
