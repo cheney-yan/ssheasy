@@ -111,8 +111,9 @@ func (o *obfConn) handshakePSK() ([]byte, error) {
 }
 
 // handshakeECDH negotiates a fresh shared secret via ephemeral X25519. The
-// client sends its public key first, the server replies with its own; the
-// 32-byte keys look random on the wire, so there is no fixed signature.
+// both sides send their public key immediately and then read the peer's, so
+// the two keys cross on the wire (≈0.5 RTT instead of 1). The 32-byte keys
+// look random, so there is still no fixed signature.
 func (o *obfConn) handshakeECDH() ([]byte, error) {
 	curve := ecdh.X25519()
 	priv, err := curve.GenerateKey(rand.Reader)
@@ -121,20 +122,15 @@ func (o *obfConn) handshakeECDH() ([]byte, error) {
 	}
 	pub := priv.PublicKey().Bytes()
 	peer := make([]byte, len(pub))
-	if o.server {
-		if _, err := io.ReadFull(o.Conn, peer); err != nil {
-			return nil, err
-		}
-		if _, err := o.Conn.Write(pub); err != nil {
-			return nil, err
-		}
-	} else {
-		if _, err := o.Conn.Write(pub); err != nil {
-			return nil, err
-		}
-		if _, err := io.ReadFull(o.Conn, peer); err != nil {
-			return nil, err
-		}
+	// Send our key while reading the peer's so the two cross on the wire
+	// (writing in a goroutine avoids a deadlock on unbuffered transports).
+	werr := make(chan error, 1)
+	go func() { _, e := o.Conn.Write(pub); werr <- e }()
+	if _, err := io.ReadFull(o.Conn, peer); err != nil {
+		return nil, err
+	}
+	if err := <-werr; err != nil {
+		return nil, err
 	}
 	peerKey, err := curve.NewPublicKey(peer)
 	if err != nil {

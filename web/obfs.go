@@ -93,20 +93,16 @@ func (o *obfConn) handshakeECDH() ([]byte, error) {
 	}
 	pub := priv.PublicKey().Bytes()
 	peer := make([]byte, len(pub))
-	if o.server {
-		if _, err := io.ReadFull(o.Conn, peer); err != nil {
-			return nil, err
-		}
-		if _, err := o.Conn.Write(pub); err != nil {
-			return nil, err
-		}
-	} else {
-		if _, err := o.Conn.Write(pub); err != nil {
-			return nil, err
-		}
-		if _, err := io.ReadFull(o.Conn, peer); err != nil {
-			return nil, err
-		}
+	// Send our key while reading the peer's so the two cross on the wire
+	// (writing in a goroutine avoids a deadlock on unbuffered transports).
+	// Must match proxy/obfs.go.
+	werr := make(chan error, 1)
+	go func() { _, e := o.Conn.Write(pub); werr <- e }()
+	if _, err := io.ReadFull(o.Conn, peer); err != nil {
+		return nil, err
+	}
+	if err := <-werr; err != nil {
+		return nil, err
 	}
 	peerKey, err := curve.NewPublicKey(peer)
 	if err != nil {
