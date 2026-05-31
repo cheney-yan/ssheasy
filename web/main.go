@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"strconv"
 	"syscall/js"
 
 	"net"
@@ -40,9 +39,11 @@ func main() {
 				return
 			}
 			host, port := args[2].String(), args[3].Int()
-			usr, pass, key, bypassProxy, bypassFingerprint, useWebauthKey := args[4].String(), args[5].String(), args[6].String(), args[7].Bool(), args[8].Bool(), args[9].Bool()
+			// args[7] (formerly "bypass proxy") is ignored: all proxied
+			// connections now multiplex over the shared session.
+			usr, pass, key, bypassFingerprint, useWebauthKey := args[4].String(), args[5].String(), args[6].String(), args[8].Bool(), args[9].Bool()
 			var err error
-			sshCon, err = con(host, port, bypassProxy)
+			sshCon, err = con(host, port)
 			if err != nil {
 				js.Global().Call("showErr", fmt.Sprintf("cannot connect to host: %v", err))
 				return
@@ -287,22 +288,7 @@ func writeToConsole(str string) {
 	// fmt.Printf("writeToConsole: [%s] returned\n", str)
 }
 
-func con(host string, port int, bypassProxy bool) (net.Conn, error) {
-	if bypassProxy {
-		// Direct connection to a real SSH server: no ssheasy proxy on the other
-		// end to de-obfuscate or multiplex, so leave the stream untouched.
-		l := js.Global().Get("window").Get("location")
-		wsProtocol := "wss://"
-		if l.Get("protocol").String() == "http:" {
-			wsProtocol = "ws://"
-		}
-		conn, err := ws.Dial(wsProtocol + host + ":" + strconv.FormatInt(int64(port), 10))
-		if err != nil {
-			return nil, fmt.Errorf("failed to open ws: %v", err)
-		}
-		return conn, nil
-	}
-
+func con(host string, port int) (net.Conn, error) {
 	// Default: multiplex this connection as a stream over the shared session.
 	// Fall back to a dedicated /p connection if the mux session can't be set up.
 	if c, err := dialMuxed(host, port); err == nil {

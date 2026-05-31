@@ -113,7 +113,7 @@ window.onload = function() {
     var user = $('#usrInp').val()
     var host = $('#hostInp').val() 
     var port = $("#portInp").val()
-    var bypassProxy = $('#bypassProxyInp').is(':checked')
+    var bypassProxy = false
     var wKey = $('#webauthnKeySelect').val();
     var histItem = {user: user, host: host, port: port, bypassProxy: bypassProxy, webAuthnKey: wKey}
     var history = JSON.parse(localStorage.getItem("historyList")) || [];
@@ -132,7 +132,6 @@ window.onload = function() {
     $('#usrInp').val(con.user)
     $('#hostInp').val(con.host) 
     $("#portInp").val(con.port)
-    $('#bypassProxyInp').prop('checked', con.bypassProxy)
     if(con.webAuthnKey != undefined) {
       $('#webauthnKeySelect').val(con.webAuthnKey )
     }
@@ -237,7 +236,7 @@ window.onload = function() {
           user,
           password,
           pk,
-          $('#bypassProxyInp').is(':checked'),
+          false,
           false,
           webauthnKey != -1
         );
@@ -418,7 +417,7 @@ window.onload = function() {
 
   reconnect = function(shouldReconnect) {
     if(shouldReconnect) {
-      initConnection(term.rows, term.cols,$('#hostInp').val(),Number($('#portInp').val()),$('#usrInp').val(),$('#passInp').val(),$('#pkInp').val(), $('#bypassProxyInp').is(':checked'), false, $('#webauthnKeySelect').val() > -1);
+      initConnection(term.rows, term.cols,$('#hostInp').val(),Number($('#portInp').val()),$('#usrInp').val(),$('#passInp').val(),$('#pkInp').val(), false, false, $('#webauthnKeySelect').val() > -1);
     }else {
       $('#conPan').show();
       $('#connectOverlay').removeClass('hidden');
@@ -1218,15 +1217,9 @@ window.onload = function() {
           </div>
 
           <button id="conBtn" type="button" class="connect-btn"
-            onclick="$('#conBtn').prop('disabled',true);showMsg('Connecting...');initConnection(term.rows, term.cols,$('#hostInp').val(),Number($('#portInp').val()),$('#usrInp').val(),$('#passInp').val(),$('#pkInp').val(), $('#bypassProxyInp').is(':checked'), false, $('#webauthnKeySelect').val() > -1);">Connect</button>
+            onclick="$('#conBtn').prop('disabled',true);showMsg('Connecting...');initConnection(term.rows, term.cols,$('#hostInp').val(),Number($('#portInp').val()),$('#usrInp').val(),$('#passInp').val(),$('#pkInp').val(), false, false, $('#webauthnKeySelect').val() > -1);">Connect</button>
 
           <div class="conn-extras">
-            <details>
-              <summary>Advanced</summary>
-              <label class="adv-row" title="Skip this server's relay and open a WebSocket straight to host:port. The browser can't speak raw TCP, so host:port must be a WebSocket-to-TCP bridge (e.g. websockify), not a plain sshd — and it needs TLS (wss) when this page is served over https.">
-                <input id="bypassProxyInp" type="checkbox"> Bypass relay (host runs a websocket bridge)
-              </label>
-            </details>
             <details>
               <summary>Recent connections</summary>
               <div id="historyListContainer"><ul id="historyList"></ul></div>

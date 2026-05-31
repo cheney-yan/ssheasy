@@ -143,7 +143,7 @@ func recoverLog(what string) {
 func handleReverseConn(rc net.Conn, host string, port int) {
 	defer recoverLog("reverse conn")
 	defer rc.Close()
-	tc, err := con(host, port, false) // dial the target through the websocket proxy
+	tc, err := con(host, port) // dial the target through the shared mux session
 	if err != nil {
 		log.Printf("reverse: dial target %s:%d failed: %v", host, port, err)
 		return
