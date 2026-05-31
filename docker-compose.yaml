@@ -29,8 +29,7 @@ services:
       - '/logs/connections.log'
     ports:
       # Site + websocket. Bound to localhost; public access is via the tunnel.
-      - 127.0.0.1:8081:5555
-      - 127.0.0.1:6666:6666
+      - 5555:5555
     # Let the reverse-proxy feature reach services on the Docker host (the
     # machine running the browser, when co-located) via "host.docker.internal".
     extra_hosts:
@@ -49,6 +48,3 @@ services:
       - TUNNEL_TOKEN=${TUNNEL_TOKEN}
     depends_on:
       - proxy
-
-  # Test SSH servers live in test/docker-compose.yaml (opt-in overlay):
-  #   docker compose -f docker-compose.yaml -f test/docker-compose.yaml up

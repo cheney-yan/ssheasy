@@ -24,8 +24,9 @@ There are **two Go modules** plus the static frontend:
   SPA fallback; `proxy/fileserver.go` is a vendored copy of net/http's file
   server).
 
-Public exposure is via the `cloudflared` service (ingress → `http://proxy:5555`).
-Ports are bound to `127.0.0.1` in compose; the tunnel is the only public path.
+Public exposure is via the `cloudflared` service (ingress → `http://proxy:5555`),
+or directly: compose publishes the site on the host's `:5555` (TOTP-gated). The
+admin `:6666` is **not** published (internal only — it has a weak default key).
 
 ### The connection path (read this before touching transport code)
 
@@ -113,9 +114,10 @@ controls on that system rather than adding bespoke styles.
 - **Disconnect UX**: a stream read error calls `showReconnect`, which shows a
   persistent one-line top banner (`#disconnectBanner`) with a Reconnect button —
   not a modal, so the terminal stays usable. There is **no auto-reconnect**.
-- **Heartbeat**: transport-level only — yamux keepalive (~30s) on `/pm`, a 20s
-  WebSocket ping on legacy `/p`. There is **no SSH-level keepalive**
-  (`keepalive@openssh.com`), so an idle-timeout `sshd` can still drop a session.
+- **Heartbeat**: the WASM client sends an SSH-level keepalive
+  (`keepalive@openssh.com`, a namespaced request name — not an email) every 30s
+  so idle sessions aren't dropped by `sshd`/NAT; the transport also has its own
+  (yamux keepalive on `/pm`, a 20s WebSocket ping on legacy `/p`).
 - Terminal **search** highlight: the active match is the xterm *selection*
   (themed black-on-yellow) since the search addon can't recolour matched glyphs;
   other matches use a translucent decoration.

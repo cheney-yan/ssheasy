@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"syscall/js"
+	"time"
 
 	"net"
 
@@ -173,6 +174,20 @@ func main() {
 				sshCon.Close()
 				return
 			}
+
+			// SSH-level keepalive: the transport (yamux/websocket) has its own
+			// heartbeat, but SSH sends none, so an idle session can be dropped by
+			// the server's ClientAliveInterval or a stateful NAT. Ping every 30s
+			// (like OpenSSH's ServerAliveInterval); stop once the conn is gone.
+			go func(cl *ssh.Client) {
+				t := time.NewTicker(30 * time.Second)
+				defer t.Stop()
+				for range t.C {
+					if _, _, err := cl.SendRequest("keepalive@openssh.com", true, nil); err != nil {
+						return
+					}
+				}
+			}(sshClient)
 
 			kcb := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 				if len(args) < 1 {
