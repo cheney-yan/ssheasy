@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -49,15 +50,22 @@ func main() {
 	}
 
 	startAdmin(*adminAddr, *adminKey)
+	initAuth()
+
 	r := mux.NewRouter()
+	// TOTP login gate (no-op unless TOTP_SEED + SESSION_SECRET are set).
+	r.HandleFunc("/auth/login", handleLogin)
+	r.HandleFunc("/auth/logout", handleLogout)
+	// Websocket proxy. /p is the path the WASM client dials (see web/main.go);
+	// /ws is kept for backwards compatibility.
+	r.Handle("/p", wmux)
 	r.Handle("/ws", wmux)
-	// http.Handle("/cl/", http.StripPrefix("/cl", http.FileServer(http.Dir("./html"))))
-	// r.PathPrefix("/cl/").Handler(http.StripPrefix("/cl", http.FileServer(http.Dir("./html"))))
-	r.PathPrefix("/cl/").Handler(http.StripPrefix("/cl", FileServer(Dir("./html"))))
+	// Static site, with SPA fallback to index.html for unknown paths.
+	r.PathPrefix("/").Handler(spaFileServer(Dir("./html")))
 
 	srv := http.Server{
 		Addr:    *publicAddr,
-		Handler: r,
+		Handler: authMiddleware(r),
 	}
 	idleConnsClosed := make(chan struct{})
 	go func() {
@@ -114,13 +122,23 @@ func handleWss(wsconn *websocket.Conn) {
 	}
 	l.logf("handlewss from %v", ips)
 	totalConnectionRequests.WithLabelValues(svcHost).Inc()
+	// Wrap the websocket in the obfuscation layer (when enabled) before any
+	// payload is read or written, so the connection header and the SSH banner
+	// never appear in plaintext on the wire. Binary frames must be set before
+	// the first write. tr is the transport used for all payload from here on;
+	// control frames (ping) keep using wsconn directly.
+	wsconn.PayloadType = websocket.BinaryFrame
+	var tr net.Conn = wsconn
+	if obfsEnabled() {
+		tr = newObfConn(wsconn, true, obfsPSK())
+	}
 	err := wsconn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	if err != nil {
 		log.Printf("failed to set red deadline: %v", err)
 		return
 	}
 	buf := make([]byte, 2048)
-	_, err = wsconn.Read(buf)
+	_, err = tr.Read(buf)
 	if err != nil {
 		l.logf("failed to read connection msg: %v", err)
 		return
@@ -158,7 +176,7 @@ func handleWss(wsconn *websocket.Conn) {
 		if r, err := json.Marshal(resp); err != nil {
 			l.logf("failed to marshall: %v", err)
 		} else {
-			if err := websocket.Message.Send(wsconn, r); err != nil {
+			if _, err := tr.Write(r); err != nil {
 				l.logf("failed to write status: %v", err)
 			}
 		}
@@ -169,7 +187,7 @@ func handleWss(wsconn *websocket.Conn) {
 	if r, err := json.Marshal(resp); err != nil {
 		l.logf("failed to marshall: %v", err)
 	} else {
-		if err := websocket.Message.Send(wsconn, r); err != nil {
+		if _, err := tr.Write(r); err != nil {
 			l.logf("failed to write status: %v", err)
 		}
 	}
@@ -177,9 +195,8 @@ func handleWss(wsconn *websocket.Conn) {
 	ac = activeConnections.WithLabelValues(svcHost)
 	ac.Inc()
 	writeAuditLog(ips[0], cr.Host, cr.Port, "connection established")
-	wsconn.PayloadType = websocket.BinaryFrame
 
-	cw, wsw := newLimters(conn, wsconn, l)
+	cw, wsw := newLimters(conn, tr, l)
 
 	done := make(chan struct{})
 
@@ -197,7 +214,7 @@ func handleWss(wsconn *websocket.Conn) {
 		n, err := io.Copy(&meteredWriter{
 			w: cw,
 			c: totalBytes.WithLabelValues(svcHost, "up"),
-		}, wsconn)
+		}, tr)
 		conn.Close()
 		stats <- conStat{"up", err, n}
 	}()
@@ -283,6 +300,37 @@ var (
 	sourceRates        = map[string]*rate.Limiter{}
 )
 
+// Per-source-IP new-connection limiter. Default is 1 conn/sec, burst 1 (the
+// original anti-abuse setting for the public deployment). This is far too tight
+// for reverse-proxying short-lived connections (e.g. HTTP/1.0, where each
+// request is a fresh connection -> a fresh /p websocket), so it's configurable:
+//   SRC_CONN_RATE   conns/sec (float). "off"/"0"/negative disables limiting.
+//   SRC_CONN_BURST  burst size (int).
+var (
+	srcConnRate     = rate.Limit(1)
+	srcConnBurst    = 1
+	srcLimitEnabled = true
+)
+
+func init() {
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("SRC_CONN_RATE"))); v != "" {
+		if v == "off" || v == "no" {
+			srcLimitEnabled = false
+		} else if f, err := strconv.ParseFloat(v, 64); err == nil {
+			if f <= 0 {
+				srcLimitEnabled = false
+			} else {
+				srcConnRate = rate.Limit(f)
+			}
+		}
+	}
+	if v := os.Getenv("SRC_CONN_BURST"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			srcConnBurst = n
+		}
+	}
+}
+
 func getIPAdress(ws *websocket.Conn) (bool, []string) {
 	// using sprintf as it panics locally
 	var ips []string
@@ -298,7 +346,7 @@ func getIPAdress(ws *websocket.Conn) (bool, []string) {
 	blacklistSrcMu.RLock()
 	defer blacklistSrcMu.RUnlock()
 	if sourceRates[ips[0]] == nil {
-		sourceRates[ips[0]] = rate.NewLimiter(rate.Limit(1), 1)
+		sourceRates[ips[0]] = rate.NewLimiter(srcConnRate, srcConnBurst)
 	}
 	for _, bi := range blacklistedSources {
 		for _, ip := range ips {
@@ -306,6 +354,9 @@ func getIPAdress(ws *websocket.Conn) (bool, []string) {
 				return true, ips
 			}
 		}
+	}
+	if !srcLimitEnabled {
+		return false, ips
 	}
 	return !sourceRates[ips[0]].Allow(), ips
 }

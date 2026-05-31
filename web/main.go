@@ -158,7 +158,9 @@ func main() {
 			// Request pseudo terminal
 			rows, cols := args[0].Int(), args[1].Int()
 			log.Printf("requesting %dx%d terminal", rows, cols)
-			if err := session.RequestPty("xterm", rows, cols, modes); err != nil {
+			// xterm-256color advertises the 256-color palette to remote apps
+			// (TERM=xterm would cap them at 8/16 colors); xterm.js renders it.
+			if err := session.RequestPty("xterm-256color", rows, cols, modes); err != nil {
 				js.Global().Call("showErr", fmt.Sprintf("failed to request a pseudo terminal: %s", err))
 				sshCon.Close()
 				return
@@ -210,6 +212,8 @@ func main() {
 	initFileBrowserAPI()
 	js.Global().Set("parsePublicKey", parsePublicKey)
 	js.Global().Set("forward", js.FuncOf(forward))
+	js.Global().Set("reverseForward", js.FuncOf(reverseForward))
+	js.Global().Set("stopReverseForward", js.FuncOf(stopReverseForward))
 
 	fmt.Println("main is running")
 
@@ -300,7 +304,17 @@ func con(host string, port int, bypassProxy bool) (net.Conn, error) {
 	}
 
 	if bypassProxy {
+		// Direct connection to a real SSH server: no ssheasy proxy on the other
+		// end to de-obfuscate, so leave the stream untouched.
 		return conn, nil
+	}
+
+	// Obfuscate everything sent to the ssheasy proxy (connection header + SSH
+	// banner) so the websocket frames carry no plaintext SSH signature. The
+	// proxy must be configured to match (OBFS_ENABLED / OBFS_KEY).
+	var tr net.Conn = conn
+	if obfsClientEnabled() {
+		tr = newObfConn(conn, false, obfsClientKey())
 	}
 
 	var buf bytes.Buffer
@@ -311,12 +325,12 @@ func con(host string, port int, bypassProxy bool) (net.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode connection request: %v", err)
 	}
-	conn.Write(buf.Bytes())
+	tr.Write(buf.Bytes())
 	var resp struct {
 		Status string `json:"status"`
 		Error  string `json:"error"`
 	}
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+	if err := json.NewDecoder(tr).Decode(&resp); err != nil {
 		return nil, fmt.Errorf("failed to read connection request response: %v %v", err, resp)
 	}
 	log.Printf("received con request response: %v", resp)
@@ -327,7 +341,29 @@ func con(host string, port int, bypassProxy bool) (net.Conn, error) {
 		return nil, errors.New(resp.Error)
 	}
 
-	return conn, nil
+	return tr, nil
+}
+
+// obfsClientEnabled reports whether to obfuscate proxied connections. Controlled
+// by window.OBFS_ENABLED (default true); set it to false to disable. Must match
+// the proxy's OBFS_ENABLED.
+func obfsClientEnabled() bool {
+	v := js.Global().Get("OBFS_ENABLED")
+	if v.Type() == js.TypeBoolean {
+		return v.Bool()
+	}
+	return true
+}
+
+// obfsClientKey returns the pre-shared passphrase from window.OBFS_KEY, or ""
+// to negotiate a fresh key per connection via X25519. Must match the proxy's
+// OBFS_KEY.
+func obfsClientKey() string {
+	v := js.Global().Get("OBFS_KEY")
+	if v.Type() == js.TypeString {
+		return v.String()
+	}
+	return ""
 }
 
 func runCmd(cmd string) (string, error) {

@@ -1,9 +1,41 @@
 <!doctype html>
 <html>
   <head>
-    <title>WebSSH Client</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
-    
+    <!-- PWA: installable web app -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0d1117" />
+    <link rel="icon" href="favicon.ico" sizes="any" />
+    <link rel="icon" type="image/svg+xml" href="icon.svg" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="python3" />
+    <title>python3</title>
+
+    <!-- Self-hosted JetBrainsMono Nerd Font (Mono): a patched build that bundles
+         Powerline separators and the full Nerd Font icon set, so prompts that
+         use those glyphs render instead of tofu boxes. Bundled locally (no CDN)
+         so it works offline; color emoji still fall back to the OS fonts. -->
+    <style>
+      @font-face {
+        font-family: 'JetBrainsMono Nerd Font Mono';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url('fonts/JetBrainsMonoNerdFontMono-Regular.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'JetBrainsMono Nerd Font Mono';
+        font-style: normal;
+        font-weight: 700;
+        font-display: swap;
+        src: url('fonts/JetBrainsMonoNerdFontMono-Bold.woff2') format('woff2');
+      }
+    </style>
+
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
 
     <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css" />
@@ -18,13 +50,16 @@
     <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
     <script src="node_modules/@xterm/addon-search/lib/addon-search.js"></script>
     <script src="node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script> 
-    <script src="node_modules/@xterm/addon-serialize/lib/addon-serialize.js"></script> 
+    <script src="node_modules/@xterm/addon-serialize/lib/addon-serialize.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.8.0/lib/addon-unicode11.min.js"></script> 
 
   
     <script src="wasm_exec.js"></script>
     <script type="text/javascript">
 function fetchAndInstantiate(url, importObject) {
-  return fetch(url).then(response =>
+  // no-store: never serve a stale main.wasm from the HTTP cache, so the wasm
+  // can't drift out of sync with index.html after a redeploy.
+  return fetch(url, { cache: 'no-store' }).then(response =>
     response.arrayBuffer()
   ).then(bytes =>
     WebAssembly.instantiate(bytes, importObject)
@@ -135,59 +170,37 @@ window.onload = function() {
   }
 
   showServerKey = function(key) {
-    $('#fingerprintMsg').html("RSA key fingerprint is " + key + " <br>Are you sure you want to continue connecting (yes/no)?")
+    $('#fingerprintMsg').html("Host key: " + key + " <br>Continue connecting?")
     $('#fingerprintModal').modal('show')
   }
 
   connected = function(status, home) {
+    window.__sshConnected = true; // gate the predictive-echo overlay to live sessions
     saveHistory();
     // Explicitly hide messages and ensure conPan is hidden before calculations
     $('#msg').html('').hide();
     $('#errMsg').hide();
     $('#conPan').hide();
+    $('#connectOverlay').addClass('hidden'); // reveal the full-screen terminal
+    $('#fab').css('display', 'flex');         // expose the operations toggle
     $('#conBtn').prop('disabled',false); // Re-enable connect button
 
-    // Defer height calculation to allow DOM to settle, especially when called from Wasm
-    setTimeout(function() {
-        const headerRow = $('#headerRow');
-        const footerRow = $('#footerRow');
-        const mainContentArea = $('#mainContentArea');
-
-        let headerHeight = 0;
-        // Ensure elements exist and are visible before getting height
-        if (headerRow.length && headerRow.is(':visible')) {
-            headerHeight = headerRow.outerHeight(true) || 0;
-        }
-
-        let footerHeight = 0;
-        if (footerRow.length && footerRow.is(':visible')) {
-            footerHeight = footerRow.outerHeight(true) || 0;
-        }
-        
-        const viewportHeight = window.innerHeight; // Use viewport height directly
-
-        // Calculate available height for mainContentArea
-        const availableHeight = viewportHeight - headerHeight - footerHeight;
-                
-        if (availableHeight > 0) {
-            mainContentArea.css('height', availableHeight + 'px');
-        } else {
-            console.warn("JS: Calculated available height for mainContentArea is not positive. Check element selections, visibility, and window.innerHeight.");
-        }
-
-        // After setting mainContentArea height, if terminal is already visible, fit it.
-        if (typeof fitAddon !== 'undefined' && fitAddon && typeof term !== 'undefined' && term && $('#terminal').is(':visible')) {
-            fitAddon.fit();
-            console.log("JS: fitAddon.fit() called after initial mainContentArea height set.");
-        }
-    }, 100); // 100ms delay, can be adjusted
+    // The terminal layer is pinned to the viewport via CSS (position: fixed;
+    // inset: 0). Do NOT set an explicit height here: an inline pixel height
+    // overrides `inset` and freezes the terminal at a stale size, so it stops
+    // tracking the viewport (the cause of the hidden bottom row in a standalone
+    // PWA window and the empty gap in fullscreen). Just refit once the DOM has
+    // settled; refitInTerminal() is also wired to resize/fullscreen events.
+    setTimeout(refitTerminal, 100);
 
     $('#conInf').html(status);
-    if(home != "nil") { 
-      updateFileBrowserVisibility(true);
-    } else {
-      updateFileBrowserVisibility(false);
-    }
+    // Keep the terminal pure/full-screen on connect; the file browser is opened
+    // on demand from the drawer. Just record whether SFTP is available.
+    window.__sftpAvailable = (home != "nil");
+    $('#toggleFileBrowserBtn')
+      .prop('disabled', !window.__sftpAvailable)
+      .attr('title', window.__sftpAvailable ? '' : 'Files are not available for this session');
+    updateFileBrowserVisibility(false);
     if (typeof term !== 'undefined' && term) {
       term.focus();
     }
@@ -249,7 +262,8 @@ window.onload = function() {
     if (show) { // File browser is being shown
       console.log('Attempting to show file browser.');
       fileBrowserRow.removeClass('d-none');
-      toggleBtn.text('Hide File Browser');
+      $('#sidePanel').addClass('open with-browser'); // widen the drawer to fit it
+      toggleBtn.text('Hide Files');
        // Re-attach the iframe if it was detached
       if (detachedFileBrowserIframe) {
            iframeContainer.append(detachedFileBrowserIframe);
@@ -260,7 +274,8 @@ window.onload = function() {
     } else { // File browser is being hidden
       console.log('Attempting to hide file browser.');
       fileBrowserRow.addClass('d-none');
-      toggleBtn.text('Show File Browser');
+      $('#sidePanel').removeClass('with-browser'); // shrink the drawer back to tools width
+      toggleBtn.text('Show Files');
       const fileBrowserIframe = $('#fbFrame'); // Get the iframe element
 
       // Detach the iframe from the DOM
@@ -308,7 +323,7 @@ window.onload = function() {
           challenge: Uint8Array.from(
             window.crypto.randomUUID(), c => c.charCodeAt(0)),
           rp: {
-              name: "SSH Easy",
+              name: "python3",
               id: window.location.hostname,
           },
           user: {
@@ -329,7 +344,7 @@ window.onload = function() {
           publicKey: publicKeyCredentialCreationOptions
       }).then(function(creds) {
         var pk = parsePublicKey(JSON.stringify(creds))
-        showMsg('Copy paster the following public key into your servers <i>authorized_keys</i> file: <code>' + pk.sshKey + '</code>')
+        showMsg('Add the following public key to the remote host: <code>' + pk.sshKey + '</code>')
         pk.name = name
         pk.type = type
         console.log(pk)
@@ -406,6 +421,9 @@ window.onload = function() {
       initConnection(term.rows, term.cols,$('#hostInp').val(),Number($('#portInp').val()),$('#usrInp').val(),$('#passInp').val(),$('#pkInp').val(), $('#bypassProxyInp').is(':checked'), false, $('#webauthnKeySelect').val() > -1);
     }else {
       $('#conPan').show();
+      $('#connectOverlay').removeClass('hidden');
+      $('#fab').hide();
+      $('#sidePanel').removeClass('open with-browser');
       updateFileBrowserVisibility(false); // Hide file browser
     }
   }
@@ -419,6 +437,9 @@ window.onload = function() {
   showErr = function(msg) {
     $('#msg').hide();
     $('#conPan').show();
+    $('#connectOverlay').removeClass('hidden');
+    $('#fab').hide();
+    $('#sidePanel').removeClass('open with-browser');
     $('#conBtn').prop('disabled',false);
     $('#errMsg').show();
     $('#errMsg').html(msg);
@@ -583,6 +604,123 @@ window.onload = function() {
         });
   }
 
+  // --- Reverse proxy (remote port forwarding) ---
+  openReverseModal = function() {
+    if (!$('#revTargetHost').val()) $('#revTargetHost').val(window.location.hostname);
+    $('#revStatus').text('');
+    $('#reverseModal').modal('show');
+  }
+
+  addReverseForward = function() {
+    const remotePort = parseInt($('#revRemotePort').val(), 10);
+    const targetHost = ($('#revTargetHost').val() || window.location.hostname).trim();
+    const targetPort = parseInt($('#revTargetPort').val(), 10);
+    const bindAll = $('#revBindAll').is(':checked');
+    if (!remotePort || !targetPort) {
+      $('#revStatus').html('<span style="color:#f85149">Enter a remote port and a target port.</span>');
+      return;
+    }
+    if (typeof reverseForward !== 'function') {
+      $('#revStatus').html('<span style="color:#f85149">App is out of date — reload the page (Cmd/Ctrl+Shift+R).</span>');
+      return;
+    }
+    if (!window.__sshConnected) {
+      $('#revStatus').html('<span style="color:#f85149">Connect to a host first.</span>');
+      return;
+    }
+    $('#revStatus').text('Opening…');
+    reverseForward(remotePort, bindAll, targetHost, targetPort, function(res) {
+      if (!res || !res.ok) {
+        $('#revStatus').html('<span style="color:#f85149">Failed: ' + ((res && res.error) || 'unknown error') + '</span>');
+        return;
+      }
+      $('#revStatus').html('<span style="color:#2ea043">Active: ' + res.info + '</span>');
+      addReverseListItem(res.key, res.info);
+    });
+  }
+
+  function addReverseListItem(key, info) {
+    const id = 'rev_' + key.replace(/[^a-zA-Z0-9]/g, '_');
+    if (document.getElementById(id)) return;
+    const row = $('<div class="rev-item" id="' + id + '"></div>');
+    row.append($('<span></span>').text(info));
+    const btn = $('<button type="button" class="panel-btn danger" style="width:auto">Stop</button>');
+    btn.on('click', function() {
+      if (typeof stopReverseForward === 'function') stopReverseForward(key);
+      row.remove();
+    });
+    row.append(btn);
+    $('#revList').append(row);
+  }
+
+  // Make the floating menu button draggable. A drag repositions it (and the
+  // position is remembered); a plain click still toggles the panel. We only
+  // treat it as a drag once the pointer moves past a small threshold, and
+  // swallow the trailing click so a drag doesn't also open/close the drawer.
+  function makeFabDraggable() {
+    const fab = document.getElementById('fab');
+    if (!fab) return;
+
+    // Restore a saved position, clamped into the current viewport.
+    try {
+      const p = JSON.parse(localStorage.getItem('fabPos') || 'null');
+      if (p) placeFab(p.left, p.top);
+    } catch (e) { /* ignore */ }
+
+    function placeFab(left, top) {
+      left = Math.min(window.innerWidth - fab.offsetWidth, Math.max(0, left));
+      top = Math.min(window.innerHeight - fab.offsetHeight, Math.max(0, top));
+      fab.style.left = left + 'px';
+      fab.style.top = top + 'px';
+      fab.style.right = 'auto';
+      fab.style.bottom = 'auto';
+    }
+
+    let dragging = false, moved = false, startX = 0, startY = 0, originX = 0, originY = 0;
+
+    fab.addEventListener('pointerdown', function(e) {
+      dragging = true; moved = false;
+      startX = e.clientX; startY = e.clientY;
+      const r = fab.getBoundingClientRect();
+      originX = r.left; originY = r.top;
+      fab.classList.add('dragging');
+      fab.setPointerCapture(e.pointerId);
+    });
+
+    fab.addEventListener('pointermove', function(e) {
+      if (!dragging) return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+      if (moved) placeFab(originX + dx, originY + dy);
+    });
+
+    function endDrag(e) {
+      if (!dragging) return;
+      dragging = false;
+      fab.classList.remove('dragging');
+      if (e.pointerId != null && fab.hasPointerCapture && fab.hasPointerCapture(e.pointerId)) {
+        fab.releasePointerCapture(e.pointerId);
+      }
+      if (moved) {
+        localStorage.setItem('fabPos', JSON.stringify({
+          left: parseInt(fab.style.left, 10), top: parseInt(fab.style.top, 10)
+        }));
+      }
+    }
+    fab.addEventListener('pointerup', endDrag);
+    fab.addEventListener('pointercancel', endDrag);
+
+    // Suppress the click that follows a drag so it doesn't toggle the panel.
+    fab.addEventListener('click', function(e) {
+      if (moved) { e.stopImmediatePropagation(); e.preventDefault(); moved = false; }
+    }, true);
+
+    // Keep the button on-screen if the viewport shrinks.
+    window.addEventListener('resize', function() {
+      if (fab.style.left) placeFab(parseInt(fab.style.left, 10), parseInt(fab.style.top, 10));
+    });
+  }
+
   $(document).ready(function(){
     $('#conBtn').prop('disabled',true);
     $('#hostInp').keyup(function(){ $('#conBtn').prop('disabled', notReady() ? true : false); })
@@ -598,6 +736,18 @@ window.onload = function() {
     $('#toggleFileBrowserBtn').on('click', function() {
         updateFileBrowserVisibility($('#fileBrowserRow').hasClass('d-none'));
     });
+    // Floating button toggles the operations drawer; close button / Esc dismiss it.
+    function togglePanel(open) {
+        const sp = $('#sidePanel');
+        const show = open === undefined ? !sp.hasClass('open') : open;
+        sp.toggleClass('open', show);
+        if (!show) sp.removeClass('with-browser');
+        if (typeof fitAddon !== 'undefined' && fitAddon) setTimeout(() => fitAddon.fit(), 240);
+    }
+    $('#fab').on('click', function() { togglePanel(); });
+    $('#panelClose').on('click', function() { togglePanel(false); });
+    $(document).on('keydown', function(e) { if (e.key === 'Escape') togglePanel(false); });
+    makeFabDraggable();
     renderHistoryList()
     renderWebauthnKeySelector()
   });
@@ -607,85 +757,189 @@ window.onload = function() {
 
     </script>
     <style>
-      html {
-        height: 100%;
-        overflow: hidden; /* Prevent scrollbars on html that might affect vh/100% calculations */
+      :root {
+        --bg: #0d1117;
+        --panel: #161b22;
+        --border: #30363d;
+        --fg: #c9d1d9;
+        --accent: #238636;
+        --accent-hover: #2ea043;
       }
+      html { height: 100%; overflow: hidden; }
       body {
-        height: 100vh; /* Directly use viewport height for the body */
+        height: 100vh;
         margin: 0;
-        overflow: hidden; /* Prevent scrollbars on body */
-        display: flex; /* Make body a flex container */
-        flex-direction: column; /* So its direct child can grow to fill it */
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: system-ui, -apple-system, sans-serif;
       }
-      /* Target the main outermost container-fluid */
-      body > .container-fluid:first-of-type {
-        height: 100%; /* Make this container take 100% of the body's height */
+
+      /* --- Full-screen terminal layer (always fills the viewport) --- */
+      #mainContentArea {
+        position: fixed;
+        inset: 0;
         display: flex;
         flex-direction: column;
-        min-height: 0; /* Still important for flex children within this container */
+        overflow: hidden;
+        background: #000;
       }
       #termContainer {
-        flex-grow: 1 !important; /* Allows #termContainer to expand (added !important) */
-        /* d-flex flex-column is usually set by class, but ensure it for CSS specificity */
-        flex-shrink: 1; /* Allow terminal container to shrink if needed */
-        min-height: 0; /* Allow shrinking below content size, can help flex-grow */
-      }
-      /* NEW: Wrapper for terminal and file browser sections */
-      #mainContentArea {
+        flex: 1 1 auto;
+        min-height: 0;
         display: flex;
         flex-direction: column;
-        /* height will be set by JavaScript after connection */
-        overflow: hidden; /* Prevent its own scrollbars if content overflows, children handle scroll */
-        min-height: 0; /* Allow shrinking, good practice for nested flex */
       }
+      #terminal { padding: 6px 8px; }
 
-      #fileBrowserRow {
-        flex-basis: 350px; /* Suggest an initial height for the file browser row */
-        flex-shrink: 1;   /* Allow file browser row to shrink if space is tight */
-        overflow: hidden; /* Prevent its content from overflowing and causing scroll issues */
+      /* --- Centered connect card, shown before a session is live --- */
+      #connectOverlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(13, 17, 23, 0.82);
+        backdrop-filter: blur(3px);
+        overflow: auto;
+        padding: 24px;
       }
+      #connectOverlay.hidden { display: none; }
+      #connectCard {
+        width: 100%;
+        max-width: 620px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 22px 22px 12px;
+        box-shadow: 0 16px 48px rgba(0,0,0,.5);
+      }
+      #connectCard h1 {
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin: 0 0 16px;
+        letter-spacing: .3px;
+      }
+      #connectCard .form-control { background: #0d1117; border-color: var(--border); color: var(--fg); }
+      #connectCard .form-control::placeholder { color: #6e7681; }
+      #connectOverlay .btn-link { color: #58a6ff; }
+      #footerRow { margin-top: 10px; font-size: .72rem; color: #6e7681; text-align: center; }
 
-      .iframe-container {
-  overflow: hidden;
-  padding-top: 56.25%;
-  position: relative;
-}
- 
-.iframe-container iframe {
-   border: 0;
-   height: 100%;
-   left: 0;
-   position: absolute;
-   top: 0;
-   width: 100%;
-}
-.nopad {
-  padding-left:0
-}
-.row {
-  padding-top: 5px;
-}
+      /* --- Floating toggle button (visible once connected) --- */
+      #fab {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 1100;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        border: 1px solid var(--border);
+        background: rgba(22, 27, 34, 0.85);
+        color: var(--fg);
+        font-size: 20px;
+        cursor: grab;
+        display: none;            /* shown via JS after connect */
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 14px rgba(0,0,0,.45);
+        opacity: 0.5;             /* half-transparent so it stays out of the way */
+        touch-action: none;       /* allow pointer dragging on touch screens */
+        user-select: none;
+        transition: background .15s, opacity .15s;
+      }
+      #fab:hover { background: var(--accent); opacity: 1; }
+      #fab.dragging { cursor: grabbing; opacity: 1; transition: none; }
 
-ul {
-  list-style-type: none;
-  padding: 0;
-  width: 15rem;
-  height: 180px;
-  overflow-y: scroll;
-}
+      /* --- Right-side operations drawer --- */
+      #sidePanel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        z-index: 1090;
+        height: 100vh;
+        width: 340px;
+        max-width: 92vw;
+        background: var(--panel);
+        border-left: 1px solid var(--border);
+        box-shadow: -8px 0 28px rgba(0,0,0,.45);
+        transform: translateX(100%);
+        transition: transform .22s ease, width .22s ease;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      #sidePanel.open { transform: translateX(0); }
+      #sidePanel.with-browser { width: 720px; }
+      #panelHeader {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        font-size: .8rem;
+        text-transform: uppercase;
+        letter-spacing: .8px;
+        color: #8b949e;
+      }
+      #panelClose {
+        background: none; border: none; color: #8b949e;
+        font-size: 20px; cursor: pointer; line-height: 1;
+      }
+      #panelTools {
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      #panelTools .panel-btn {
+        display: block;
+        width: 100%;
+        text-align: left;
+        padding: 9px 12px;
+        background: #0d1117;
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        font-size: .88rem;
+        cursor: pointer;
+      }
+      #panelTools .panel-btn:hover { border-color: #58a6ff; }
+      #panelTools .panel-btn.danger:hover { border-color: #f85149; color: #f85149; }
+      .panel-search { display: flex; gap: 6px; }
+      .panel-search .form-control { flex: 1; background: #0d1117; border-color: var(--border); color: var(--fg); }
+      .panel-search-opts { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: #8b949e; }
+      #conInf { font-size: .78rem; color: #8b949e; word-break: break-word; }
+      .rev-item {
+        display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        padding: 6px 0; font-size: .82rem; border-top: 1px solid var(--border);
+      }
+      #revList:empty { display: none; }
 
-li {
-  display: flex;
-}
+      /* File browser lives at the bottom of the (widened) drawer */
+      #fileBrowserRow { flex: 1 1 auto; min-height: 0; display: flex; padding: 0 14px 14px; }
+      #fileBrowserRow.d-none { display: none !important; }
+      .iframe-container { flex: 1; position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: 7px; }
+      .iframe-container iframe { border: 0; position: absolute; inset: 0; width: 100%; height: 100%; }
 
-li button {
-  background: white;
-  color: red;
-  margin-right: .5rem;
-  border-radius: 10px;
-  border: none;
-}
+      .nopad { padding-left: 0; }
+      ul#historyList {
+        list-style-type: none;
+        padding: 0;
+        width: 100%;
+        max-height: 160px;
+        overflow-y: auto;
+        margin: 0;
+      }
+      li { display: flex; }
+      li button {
+        background: transparent;
+        color: #f85149;
+        margin-right: .5rem;
+        border-radius: 8px;
+        border: none;
+      }
 </style>
 </head>
   <body>
@@ -693,7 +947,7 @@ li button {
           <div class="modal-dialog" role="document">
             <div class="modal-content">
               <div class="modal-header">
-                <h5 class="modal-title">Server fingerprint</h5>
+                <h5 class="modal-title">Verify host</h5>
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close" onclick="acceptFingerprint(false);">
                   <span aria-hidden="true">&times;</span>
                 </button>
@@ -778,18 +1032,16 @@ li button {
           <div class="modal-dialog" role="document">
             <div class="modal-content">
               <div class="modal-header">
-                <h5 class="modal-title">Open SSH tunnel</h5>
+                <h5 class="modal-title">Open URL</h5>
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                   <span aria-hidden="true">&times;</span>
                 </button>
               </div>
               <div  class="modal-body">
-                <p>You can open a tunnel through the SSH connection to a web endpoint/url accessible only locally on the server or on other host from the server. <br>
-                  After specifying the target url and clicking on Open the url will be opened in a new browser tab. </p>
-                <p>Always specify a full url with protocol (http:// or https://). If you provided a hostname not an IP and there's an issue try it with an IP address. 
-                  Currently hostnames are resolved by executing a 'getent ahosts HOSTNAME' command on the ssh server that might be not available or fail there.
-                </p>
-                <p>NOTE: this feature is currently in beta, maybe loading certain web pages fail or renders them partially broken.</p>
+                <p>Open a URL reachable from the remote endpoint in a new browser tab. <br>
+                  After specifying the target URL and clicking Open it will be opened in a new tab.</p>
+                <p>Always specify a full URL with protocol (http:// or https://). If you provided a hostname and there's an issue, try an IP address instead.</p>
+                <p>NOTE: this feature is in beta; some pages may fail to load or render partially.</p>
                 <input id="forwardUrlTxt" type="text" placeholder="local or remote url eg. http://localhost:8080" class="form-control" >
                 
               </div>
@@ -800,36 +1052,93 @@ li button {
             </div>
           </div>
         </div>
-      
-    <div class="container-fluid" > 
-      <div id="headerRow" class="row" >  
-        <div class="row">
-          <div class="col-12">
-              <div id="msg" class="alert alert-primary" role="alert"></div>
-              <div id="errMsg" class="alert alert-danger" role="alert">  </div>
+
+        <div id="reverseModal" class="modal" tabindex="-1" role="dialog">
+          <div class="modal-dialog" role="document">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title">Reverse proxy</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                  <span aria-hidden="true">&times;</span>
+                </button>
+              </div>
+              <div class="modal-body">
+                <p>Open a port on the remote host that forwards every incoming connection
+                  back through this session to a target.</p>
+                <p style="font-size:.85rem;color:#8b949e">The target is dialed from the server side, not your browser.
+                  To reach a service on the machine running this app's Docker host, use
+                  <code>host.docker.internal</code> as the host; for another container use its service name.</p>
+                <div class="form-group row">
+                  <label class="col-sm-4 col-form-label">Remote port</label>
+                  <div class="col-sm-8">
+                    <input id="revRemotePort" type="number" class="form-control" placeholder="port to open on the remote, e.g. 8080">
+                  </div>
+                </div>
+                <div class="form-group row">
+                  <label class="col-sm-4 col-form-label">Target host</label>
+                  <div class="col-sm-8">
+                    <input id="revTargetHost" type="text" class="form-control" placeholder="defaults to this host">
+                  </div>
+                </div>
+                <div class="form-group row">
+                  <label class="col-sm-4 col-form-label">Target port</label>
+                  <div class="col-sm-8">
+                    <input id="revTargetPort" type="number" class="form-control" placeholder="port on the target, e.g. 3000">
+                  </div>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="revBindAll">
+                  <label class="form-check-label" for="revBindAll" title="Bind 0.0.0.0 on the remote; the server must allow it (GatewayPorts).">
+                    Expose on all interfaces of the remote host
+                  </label>
+                </div>
+                <div id="revStatus" class="mt-2"></div>
+                <div id="revList" class="mt-2"></div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-primary" onclick="addReverseForward();">Add</button>
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+              </div>
+            </div>
           </div>
         </div>
+
+    <!-- Full-screen terminal: always fills the viewport, the focus of the UI. -->
+    <div id="mainContentArea">
+      <div id="termContainer" class="d-flex flex-column">
+        <div class="row flex-fill" style="min-height: 0; margin: 0;">
+          <div id="terminal" class="col d-flex flex-column h-100" style="min-height: 0;"></div>
+        </div>
       </div>
-      <div id="conPan" class="row" >  
-        <div  class="container col-8 align-self-center" > 
-          <div class="row" >
+    </div>
+
+    <!-- Connect card: a centered overlay shown before a session is live. -->
+    <div id="connectOverlay">
+      <div id="connectCard">
+        <h1>python3</h1>
+        <div id="headerRow">
+          <div id="msg" class="alert alert-primary" role="alert"></div>
+          <div id="errMsg" class="alert alert-danger" role="alert"></div>
+        </div>
+        <div id="conPan">
+          <div class="row" style="margin: 0;">
             <input id="usrInp" type="text" placeholder="User" class="form-control col-3" value="root">
-            <input id="hostInp" type="text" placeholder="Host to Connect" class="form-control col-5" value="testssh">
+            <input id="hostInp" type="text" placeholder="Host" class="form-control col-5" value="">
             <input id="portInp" type="number" placeholder="Port" class="form-control col-2" value="22">
             <div class="col-2">
-              <label title="If checked then connection is not proxied through the websocket proxy of ssheasy, but it goes directly to the provided host and port. On the provided addrees a websocket proxy is expected to listen. Useful if you have your own proxy setup (like websockify or something similar).">
-                <input id="bypassProxyInp" type="checkbox" /> Bypass proxy
+              <label title="If checked the connection goes directly to the provided host and port, where a websocket endpoint is expected to listen, instead of being relayed.">
+                <input id="bypassProxyInp" type="checkbox" /> Direct
               </label>
             </div>
           </div>
-          <div class="row">
-              <input id="passInp" type="password" placeholder="Password/Passphrase" class="form-control col-3" value="root">
-              <textarea id="pkInp" rows=1 placeholder="Private Key" class="form-control col-5"></textarea>
-              <label class="btn btn-link col-2">
-                  Select key file <input id="pkFile" type="file" hidden>
-              </label>
+          <div class="row" style="margin: 0;">
+            <input id="passInp" type="password" placeholder="Password/Passphrase" class="form-control col-3" value="root">
+            <textarea id="pkInp" rows=1 placeholder="Private Key" class="form-control col-5"></textarea>
+            <label class="btn btn-link col-2">
+              Select key file <input id="pkFile" type="file" hidden>
+            </label>
           </div>
-          <div class="row">
+          <div class="row" style="margin: 0;">
             <div class="form-group col-3 nopad">
               <label for="webauthnKeySelect"></label>
               <select class="form-control" id="webauthnKeySelect">
@@ -840,51 +1149,47 @@ li button {
             <div class="col-3">
               <a type="button" class="btn btn-link col-3" href="webauthn.html" target="_blank">Learn more</a>
             </div>
-            <button id="conBtn" type="button" class="btn btn-primary col-3" 
+            <button id="conBtn" type="button" class="btn btn-primary col-3"
               onclick="$('#conBtn').prop('disabled',true);showMsg('Connecting...');initConnection(term.rows, term.cols,$('#hostInp').val(),Number($('#portInp').val()),$('#usrInp').val(),$('#passInp').val(),$('#pkInp').val(), $('#bypassProxyInp').is(':checked'), false, $('#webauthnKeySelect').val() > -1);">Connect</button>
-          </div>   
-        </div>
-        <div class="col-3">
+          </div>
           <div id="historyListContainer">
             <ul id="historyList"></ul>
           </div>
         </div>
+        <div id="footerRow">Python 3.12.0 (main) [GCC] on linux</div>
       </div>
-      <div id="mainContentArea"> <!-- NEW WRAPPER for terminal and file browser -->
-        <!-- termContainer will now grow due to flex-grow: 1 in CSS (within mainContentArea) -->
-        <div id="termContainer" class="d-flex flex-column"> <!-- REMOVED container-fluid -->
-          <div class="row flex-fill" style="min-height: 0;"> <!-- This row should take up most of termContainer's height -->
-            <!-- #terminal will take 100% height of its flex-fill parent -->
-            <div id="terminal" class="col d-flex flex-column h-100" style="min-height: 0;">
-            </div>
-          </div>
-          <div class="row">
-            <div id="conInf" class="col-2 align-self-center" >
-            </div>
-                <button type="button" class="btn btn-link col-md-2" onclick=" $('#forwardModal').modal('show');">Open URL through SSH Tunnel</button>
-                <input id="searchTxt" type="text" placeholder="Find" class="form-control col-md-2" >
-                <div class="col-md-1" style="padding-left: 20pt;padding-top: 7px;">
-                  <label class="form-check-label"> <input type="checkbox" class="form-check-input" id="matchCaseChb" >Match Case</label>
-                </div>
-                <button type="button" class="btn btn-link col-md-1" onclick="searchAddon.findNext($('#searchTxt').val(),{caseSensitive:  $('#matchCaseChb').prop('checked')})">Find Next</button>
-                <button type="button" class="btn btn-link col-md-1" onclick="searchAddon.findPrevious($('#searchTxt').val(),{caseSensitive:  $('#matchCaseChb').prop('checked')})">Find Previous</button>
-                <button type="button" class="btn btn-link col-md-1" onclick="toggleFullScreen();">Toggle Fullscreen</button>
-                <button id="toggleFileBrowserBtn" type="button" class="btn btn-link col-md-1">Show File Browser</button>
-                <button type="button" class="btn btn-link col-md-1" onclick="downloadHistory('ssheasy.txt');" title="Download the history of your terminal session">Download</button>
-          </div>
-        </div>
+    </div>
 
-        <div id="fileBrowserRow" class="row d-none"> <!-- fileBrowserRow starts hidden, also inside mainContentArea -->
-                    <div class="iframe-container col-md-10 offset-md-1">
-                  <iframe id="fbFrame"></iframe>
-              </div>
-        </div>
-      </div> <!-- End of mainContentArea -->
+    <!-- Floating button toggles the operations drawer (shown once connected). -->
+    <button id="fab" type="button" title="Operations" aria-label="Toggle operations panel">⋮</button>
 
-      <div id="footerRow" class="row"> <!-- Footer remains a direct child of the outermost container-fluid -->
-          &copy; 2019 Bela Hullar info@ssheasy.com
+    <!-- Right-side drawer holding all the additional operations. -->
+    <div id="sidePanel">
+      <div id="panelHeader">
+        <span>Session</span>
+        <button id="panelClose" type="button" aria-label="Close panel">&times;</button>
       </div>
-    </div> <!-- End of outermost container-fluid -->
+      <div id="panelTools">
+        <div id="conInf"></div>
+        <div class="panel-search">
+          <input id="searchTxt" type="text" placeholder="Find in terminal" class="form-control">
+          <button type="button" class="panel-btn" style="width:auto" onclick="searchAddon.findPrevious($('#searchTxt').val(),{caseSensitive: $('#matchCaseChb').prop('checked')})">↑</button>
+          <button type="button" class="panel-btn" style="width:auto" onclick="searchAddon.findNext($('#searchTxt').val(),{caseSensitive: $('#matchCaseChb').prop('checked')})">↓</button>
+        </div>
+        <label class="panel-search-opts"><input type="checkbox" id="matchCaseChb"> Match case</label>
+        <button type="button" class="panel-btn" onclick="$('#forwardModal').modal('show');">Open URL</button>
+        <button type="button" class="panel-btn" onclick="openReverseModal();">Reverse proxy</button>
+        <button id="toggleFileBrowserBtn" type="button" class="panel-btn">Show Files</button>
+        <button type="button" class="panel-btn" onclick="toggleFullScreen();">Toggle Fullscreen</button>
+        <button type="button" class="panel-btn" onclick="downloadHistory('session.txt');" title="Download the session output">Download session log</button>
+        <button type="button" class="panel-btn danger" onclick="location.reload();">New connection</button>
+      </div>
+      <div id="fileBrowserRow" class="d-none">
+        <div class="iframe-container">
+          <iframe id="fbFrame"></iframe>
+        </div>
+      </div>
+    </div>
    
    <script>
       var term;
@@ -893,7 +1198,16 @@ li button {
       var fitAddon; // Declare fitAddon here to make it accessible in updateFileBrowserVisibility
 
       function initXTerm() {
-        term = new Terminal();
+        term = new Terminal({
+          // allowProposedApi lets xterm use its Unicode v11 width handling so
+          // wide emoji occupy two cells and don't overlap neighbouring glyphs.
+          allowProposedApi: true,
+          // Bundled JetBrainsMono Nerd Font Mono supplies Powerline + icon
+          // glyphs; the trailing color-emoji fonts (Apple/Segoe/Noto) supply
+          // full-color emoji on each platform.
+          fontFamily: "'JetBrainsMono Nerd Font Mono', 'MesloLGS NF', 'Cascadia Code', 'Fira Code', Menlo, Monaco, 'Ubuntu Mono', monospace, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji'",
+          fontSize: 14
+        });
         term.loadAddon(new WebLinksAddon.WebLinksAddon());
         fitAddon = new FitAddon.FitAddon(); // Initialize the shared fitAddon
         term.loadAddon(fitAddon); 
@@ -901,22 +1215,14 @@ li button {
         term.loadAddon(searchAddon);
         serializeAddon = new SerializeAddon.SerializeAddon();
         term.loadAddon(serializeAddon);
+        // Unicode v11 width handling so emoji and CJK glyphs occupy the right
+        // number of cells; guarded so a missing CDN load doesn't break the term.
+        if (window.Unicode11Addon) {
+          term.loadAddon(new Unicode11Addon.Unicode11Addon());
+          term.unicode.activeVersion = '11';
+        }
         term.open(document.getElementById('terminal'));
-        fitAddon.fit();
-        term.write('SSH to your machine from anywhere with the SSH client running directly in your browser.');
-        term.write('\n\n\r');
-        term.write('WebSSH is SSH/SFTP client built on golang\'s SSH and SFTP library, compiled to Web Assembly to allow you to connect to your machine directly from your browser.');
-        term.write('\n\r');
-        term.write('No credentials or other plain text information is shared with our servers. Our servers only tunneling the packets from your browser to the machine you connect.');
-        term.write('They see only the same information that is visible for any router or other computer on the network when you use OpenSSH or other command line client.');
-        term.write('\n\r');
-        term.write('\n\r');
-        term.write('Just fill out the connection information and click connect to initiate the SSH session, once the remote hosts answers a pop up will show you the fingerprint of the server key and you can decide whether you want to continue with the connection.');
-        term.write('After successfully connecting you can just type your command into this Xterm.js console or browse/manage your files in the filemanager opens below the console.');
-        term.write('\n\r');
-        term.write('\n\r');
-        term.write('Source code available on github: https://github.com/hullarb/ssheasy');
-        term.write('\n\r');
+        setupPredictiveEcho(term);
         fitAddon.fit();
         const resizeObserver = new ResizeObserver((entries) => {
           fitAddon.fit();
@@ -925,15 +1231,169 @@ li button {
         });
         resizeObserver.observe(document.getElementById('terminal'));
       }
+
+      // Refit the terminal to the current viewport and tell the server the new
+      // size. Wired to viewport/fullscreen changes so the grid always fills the
+      // screen exactly (no hidden bottom row, no empty gap) — see connected().
+      function refitTerminal() {
+        if (typeof fitAddon === 'undefined' || !fitAddon || typeof term === 'undefined' || !term) return;
+        try {
+          fitAddon.fit();
+          if (typeof changeWindowSize === 'function') changeWindowSize(term.rows, term.cols);
+        } catch (e) { /* terminal not ready yet */ }
+      }
+      window.addEventListener('resize', refitTerminal);
+      window.addEventListener('orientationchange', () => setTimeout(refitTerminal, 200));
+      document.addEventListener('fullscreenchange', () => setTimeout(refitTerminal, 100));
+      document.addEventListener('webkitfullscreenchange', () => setTimeout(refitTerminal, 100));
+      if (window.visualViewport) window.visualViewport.addEventListener('resize', refitTerminal);
+
+      // Conservative predictive local echo (Mosh-style), rendered as an HTML
+      // overlay ON TOP of xterm.js — it never writes to the terminal's own
+      // buffer, so a wrong guess can simply be erased with zero corruption risk.
+      //
+      // It hides the latency you'd otherwise feel when wire-level jitter/obfs is
+      // enabled, by painting your printable keystrokes immediately (greyed +
+      // underlined = "predicted, not yet confirmed") and reconciling against the
+      // server's real output: a prediction solidifies when the server echoes the
+      // same char, and the whole prediction stack is retracted the instant the
+      // server diverges. It only engages on the NORMAL screen buffer, so under
+      // full-screen apps (vim/top/less, which use the alternate buffer) it shows
+      // nothing and you get plain server-driven rendering.
+      //
+      // Toggle: set window.PREDICTIVE_ECHO = false before connecting to disable.
+      function setupPredictiveEcho(term) {
+        if (window.PREDICTIVE_ECHO === false) return;
+        const screenEl = term.element && term.element.querySelector('.xterm-screen');
+        if (!screenEl) return;
+
+        const overlay = document.createElement('div');
+        Object.assign(overlay.style, {
+          position: 'absolute', top: '0', left: '0', right: '0', bottom: '0',
+          pointerEvents: 'none', zIndex: '10', overflow: 'hidden',
+        });
+        screenEl.appendChild(overlay);
+
+        let preds = [];          // [{char, row, col, ts, el}] in typed order
+        let curRow = 0, curCol = 0; // predicted cursor (viewport-relative)
+        let srtt = 0;            // smoothed confirm latency (ms)
+        let maskMode = false;    // true => render predictions as '*' (no-echo / password)
+        let outTail = '';        // rolling tail of recent server output (for prompt detection)
+
+        // Matches the end of common no-echo prompts so we mask BEFORE the first
+        // secret keystroke is typed (rather than only after it fails to echo).
+        const SECRET_PROMPT = /(?:password|passphrase|verification code)\b\s*:?\s*$/i;
+
+        const buf = () => term.buffer.active;
+        const onNormalBuffer = () => buf().type === 'normal';
+        const sessionLive = () => window.__sshConnected === true;
+        const cell = () => {
+          const r = screenEl.getBoundingClientRect();
+          return { w: r.width / term.cols, h: r.height / term.rows };
+        };
+        // Confirmed predictions retract if unechoed for ~3x the typical echo RTT
+        // (bounded). Keeps a non-echoed char (e.g. a password) on screen briefly.
+        const retractMs = () => Math.max(150, Math.min(1000, srtt ? srtt * 3 : 400));
+
+        function clearPreds() {
+          for (const p of preds) p.el.remove();
+          preds = [];
+        }
+
+        function place(ch) {
+          // Don't predict across the right margin (wrap behaviour is ambiguous).
+          if (curCol >= term.cols - 1) { clearPreds(); return false; }
+          const { w, h } = cell();
+          const el = document.createElement('span');
+          // Never paint the real character while echo is off; show '*' instead.
+          el.textContent = maskMode ? '*' : ch;
+          Object.assign(el.style, {
+            position: 'absolute', left: (curCol * w) + 'px', top: (curRow * h) + 'px',
+            width: w + 'px', height: h + 'px', lineHeight: h + 'px',
+            fontFamily: term.options.fontFamily, fontSize: term.options.fontSize + 'px',
+            color: (term.options.theme && term.options.theme.foreground) || '#d0d0d0',
+            opacity: '0.6', textDecoration: 'underline', whiteSpace: 'pre',
+            textAlign: 'left',
+          });
+          overlay.appendChild(el);
+          preds.push({ char: ch, row: curRow, col: curCol, ts: Date.now(), el });
+          curCol++;
+          return true;
+        }
+
+        // Observe keystrokes (in ADDITION to the WASM onData that actually sends
+        // them); we only draw the optimistic prediction here.
+        term.onData((data) => {
+          if (!sessionLive() || !onNormalBuffer()) { clearPreds(); return; }
+          if (preds.length === 0) { curRow = buf().cursorY; curCol = buf().cursorX; }
+          for (const ch of data) {
+            const code = ch.codePointAt(0);
+            if (code >= 0x20 && code <= 0x7e) {
+              if (!place(ch)) return;
+            } else if (code === 0x7f || code === 0x08) { // backspace: only erase our own prediction
+              const p = preds.pop();
+              if (!p) { clearPreds(); return; }
+              p.el.remove();
+              curCol = p.col; curRow = p.row;
+            } else { // Enter, Tab, arrows, Ctrl/Esc: not predictable -> hand off to server
+              clearPreds();
+              return;
+            }
+          }
+        });
+
+        function reconcile() {
+          try {
+            if (!onNormalBuffer()) { clearPreds(); return; } // entered an app
+            const now = Date.now();
+            // Confirm/retract from the oldest prediction forward; the server
+            // echoes in typed order.
+            while (preds.length) {
+              const p = preds[0];
+              const line = buf().getLine(buf().baseY + p.row);
+              const chr = line ? line.getCell(p.col).getChars() : '';
+              if (chr === p.char) {                 // server rendered our guess
+                const dt = now - p.ts;
+                srtt = srtt ? srtt * 0.875 + dt * 0.125 : dt;
+                maskMode = false;                     // real echo works -> not a secret prompt
+                p.el.remove();
+                preds.shift();
+              } else if (chr !== '') {               // server wrote something else -> wrong
+                clearPreds();
+                return;
+              } else {                                // not echoed yet
+                if (!maskMode && now - p.ts > retractMs()) {
+                  // An unechoed real char is likely secret: hide what leaked and
+                  // switch to masking. Already-typed chars get redrawn as '*'.
+                  maskMode = true;
+                  clearPreds();
+                  return;
+                }
+                break;          // masked '*' (or pending) predictions stay until echo/Enter
+              }
+            }
+          } catch (e) { clearPreds(); }
+        }
+
+        const origWrite = term.write.bind(term);
+        term.write = function (data, cb) {
+          // Watch server output for password-style prompts so we pre-arm masking
+          // before the first secret keystroke (eliminating the one-char leak).
+          if (typeof data === 'string') {
+            outTail = (outTail + data.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')).slice(-120);
+            if (SECRET_PROMPT.test(outTail)) maskMode = true;
+          }
+          return origWrite(data, () => { reconcile(); if (cb) cb(); });
+        };
+
+        term.onResize(clearPreds);
+        term.onScroll(clearPreds);
+      }
+
       initXTerm();
     </script>
     <noscript>
-        SSH to your machine from anywhere with the SSH client running directly in your browser.
-        WebSSH is SSH/SFTP client built on golang\'s SSH and SFTP library, compiled to Web Assembly to allow you to connect to your machine directly from your browser.
-        No credentials or other plain text information is shared with our servers. Our servers only tunneling the packets from your browser to the machine you connect.
-        They see only the same information that is visible for any router or other computer on the network when you use OpenSSH or other command line client.
-        Just fill out the connection information and click connect to initiate the SSH session, once the remote hosts answers a pop up will show you the fingerprint of the server key and you can decide whether you want to continue with the connection.
-        After successfully connecting you can just type your command into this Xterm.js console or browse/manage your files in the filemanager opens below the console.
+        This application requires JavaScript to be enabled.
     </noscript>
   </body>
 </html>

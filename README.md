@@ -8,8 +8,22 @@ Source repositorty of the online ssh, sftp client [ssheasy.com](https://ssheasy.
 
 `docker-compose up`
 
-This will compile the wasm ssh, sftp client, the proxy component that proxies tcp connections for the client running in the browser through websocket and sets up nginx server serving the web frontend.
-Additionaly prometheus and grafana is set up as well to monitor the connections proxied. An sshd is also started in a container for testing.
+This will compile the wasm ssh, sftp client and the proxy component. The proxy
+serves the web frontend, proxies tcp connections for the client running in the
+browser through a websocket, and enforces an optional TOTP login gate.
+
+### Login gate (TOTP)
+
+To require a 6-digit authenticator code before the site is reachable, set
+`TOTP_SEED` (base32) and `SESSION_SECRET` in `.env` (see `.env.example`). The
+proxy then serves a login page; a correct code grants a signed session cookie
+lasting `SESSION_TTL` (default 24h). Add `TOTP_SEED` to your authenticator app
+(Google Authenticator / Authy / 1Password) as a manual key. If these are unset,
+the gate is disabled and the site is served openly.
+
+The published ports are bound to `127.0.0.1`; public access is intended to go
+through the Cloudflare Tunnel (`cloudflared` service), so the gate can't be
+bypassed by hitting the container directly.
 
 ### connect endpoint
 
@@ -33,7 +47,10 @@ Use `/connect?host=HOST&port=PORT&user=USER&password=PASSWORD` for initiating co
 
 ## Testing
 
-For testing docker-compose sets up an sshd in a separate container. After starting up the stack with `docker-compose up` open http://localhost:8080 in your browser and use the host testssh with user root and password root.
+For testing docker-compose can set up an sshd in a separate container (opt-in
+via the `test` profile: `docker compose --profile test up`). After starting up
+the stack open http://localhost:8081 in your browser and use the host testssh
+with user root and password root.
 
 ### Testing Webauthn
 

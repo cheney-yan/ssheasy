@@ -1,65 +1,56 @@
 version: "3"
 services:
 
-  web:
-    container_name: nginx
-    build:
-     context: .
-     dockerfile: ./nginx/Dockerfile
-    # image: nginx:1.17-alpine
-    restart: always
-    ports:
-      - 8080:80
-    depends_on:
-      - proxy
-    # volumes:
-    #   - ./proxy/html:/usr/share/nginx/html:ro
-    #   - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    command: nginx -g 'daemon off;'
-
+  # proxy serves the static site (compiled WASM client + assets), enforces the
+  # TOTP login gate, and proxies the browser's websocket to target hosts.
   proxy:
     container_name: proxy
     build:
-      context: ./proxy
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./proxy/Dockerfile
     hostname: proxy
     volumes:
       - ./proxy/logs/:/logs/
+    environment:
+      - TOTP_SEED=${TOTP_SEED}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - SESSION_TTL=${SESSION_TTL:-24h}
+      # Per-source-IP new-connection limit. The default (1/sec) throttles
+      # reverse-proxying short-lived connections; "off" disables it for this
+      # private deployment. Set a number (conns/sec) to re-enable.
+      - SRC_CONN_RATE=${SRC_CONN_RATE:-off}
+      - SRC_CONN_BURST=${SRC_CONN_BURST:-}
     command:
-      - './proxy'
+      - '/proxy'
       - '-al'
       - '/logs/connections.log'
     ports:
-      - 6666:6666
+      # Site + websocket. Bound to localhost; public access is via the tunnel.
+      - 127.0.0.1:8081:5555
+      - 127.0.0.1:6666:6666
+    # Let the reverse-proxy feature reach services on the Docker host (the
+    # machine running the browser, when co-located) via "host.docker.internal".
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: always
 
-  prometheus:
-    image: prom/prometheus:v2.12.0
-    # volumes:
-    #   - ./prometheus/config/:/etc/prometheus/
-    #   - ./prometheus/data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-    ports:
-      - 9090:9090
-    links:
+  # Cloudflare Tunnel: exposes the site publicly without opening ports. Set
+  # TUNNEL_TOKEN in .env (remotely-managed tunnel; configure the ingress to
+  # point at http://proxy:5555 in the Cloudflare Zero Trust dashboard).
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: always
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
       - proxy
-    restart: always
 
-  grafana:
-    image: grafana/grafana
-    links:
-      - prometheus
-    ports:
-      - 3000:3000
-    volumes:
-      # - ./grafana/data:/var/lib/grafana
-      - ./grafana/provisioning/:/etc/grafana/provisioning/
-    restart: always
-
+  # --- Test fixtures (opt-in): docker compose --profile test up ---
   testssh:
     image: rastasheep/ubuntu-sshd:18.04
+    profiles: ["test"]
 
   testopenssh:
     image: linuxserver/openssh-server
@@ -67,6 +58,7 @@ services:
       - LOG_STDOUT=true
     volumes:
       - ./ssh_conf:/config
+    profiles: ["test"]
 
   websockify:
     image: jwnmulder/websockify
@@ -75,3 +67,4 @@ services:
     command:
       - '2222'
       - 'testssh:22'
+    profiles: ["test"]
