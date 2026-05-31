@@ -16,18 +16,22 @@ func loginPage(msg string) string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Authentication required</title>
 <style>
-  body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9;
+  :root { --bg:#09090b; --panel:#18181b; --border:#27272a; --fg:#fafafa; --muted:#a1a1aa;
+          --accent:#22c55e; --accent-hover:#16a34a; --danger:#ef4444; --ring:rgba(34,197,94,.40); }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--fg);
          display: flex; min-height: 100vh; align-items: center; justify-content: center; margin: 0; }
-  form { background: #161b22; padding: 2rem; border-radius: 10px; border: 1px solid #30363d;
-         width: 280px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
-  h1 { font-size: 1.1rem; margin: 0 0 1rem; }
+  form { background: var(--panel); padding: 1.75rem; border-radius: 12px; border: 1px solid var(--border);
+         width: 280px; box-shadow: 0 12px 32px rgba(0,0,0,.55); }
+  h1 { font-size: 1.05rem; font-weight: 600; margin: 0 0 1.1rem; text-align: center; }
   input { width: 100%; box-sizing: border-box; padding: .7rem; font-size: 1.4rem;
-          letter-spacing: .4em; text-align: center; border-radius: 6px;
-          border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; }
+          letter-spacing: .4em; text-align: center; border-radius: 8px;
+          border: 1px solid var(--border); background: var(--bg); color: var(--fg);
+          transition: border-color .12s ease, box-shadow .12s ease; }
+  input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
   button { width: 100%; margin-top: 1rem; padding: .7rem; font-size: 1rem; cursor: pointer;
-           border: none; border-radius: 6px; background: #238636; color: #fff; }
-  button:hover { background: #2ea043; }
-  .err { color: #f85149; font-size: .85rem; margin: 0 0 1rem; }
+           border: none; border-radius: 8px; background: var(--accent); color: #052e16; font-weight: 600; }
+  button:hover { background: var(--accent-hover); }
+  .err { color: var(--danger); font-size: .85rem; margin: 0 0 1rem; }
 </style>
 </head>
 <body>

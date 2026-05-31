@@ -6,7 +6,7 @@
 
     <!-- PWA: installable web app -->
     <link rel="manifest" href="manifest.webmanifest" />
-    <meta name="theme-color" content="#0d1117" />
+    <meta name="theme-color" content="var(--bg)" />
     <link rel="icon" href="favicon.ico" sizes="any" />
     <link rel="icon" type="image/svg+xml" href="icon.svg" />
     <link rel="apple-touch-icon" href="icon-192.png" />
@@ -654,24 +654,24 @@ window.onload = function() {
     const targetPort = parseInt($('#revTargetPort').val(), 10);
     const bindAll = $('#revBindAll').is(':checked');
     if (!remotePort || !targetPort) {
-      $('#revStatus').html('<span style="color:#f85149">Enter a remote port and a target port.</span>');
+      $('#revStatus').html('<span style="color:var(--danger)">Enter a remote port and a target port.</span>');
       return;
     }
     if (typeof reverseForward !== 'function') {
-      $('#revStatus').html('<span style="color:#f85149">App is out of date — reload the page (Cmd/Ctrl+Shift+R).</span>');
+      $('#revStatus').html('<span style="color:var(--danger)">App is out of date — reload the page (Cmd/Ctrl+Shift+R).</span>');
       return;
     }
     if (!window.__sshConnected) {
-      $('#revStatus').html('<span style="color:#f85149">Connect to a host first.</span>');
+      $('#revStatus').html('<span style="color:var(--danger)">Connect to a host first.</span>');
       return;
     }
     $('#revStatus').text('Opening…');
     reverseForward(remotePort, bindAll, targetHost, targetPort, function(res) {
       if (!res || !res.ok) {
-        $('#revStatus').html('<span style="color:#f85149">Failed: ' + ((res && res.error) || 'unknown error') + '</span>');
+        $('#revStatus').html('<span style="color:var(--danger)">Failed: ' + ((res && res.error) || 'unknown error') + '</span>');
         return;
       }
-      $('#revStatus').html('<span style="color:#2ea043">Active: ' + res.info + '</span>');
+      $('#revStatus').html('<span style="color:var(--accent-hover)">Active: ' + res.info + '</span>');
       addReverseListItem(res.key, res.info);
     });
   }
@@ -796,6 +796,10 @@ window.onload = function() {
     $('#pkInp').keyup(function(){ $('#conBtn').prop('disabled', notReady() ? true : false); })
     $("#webauthnKeySelect").change(function() { $('#conBtn').prop('disabled', notReady() ? true : false); });
     $('#pkFile').change(pkFileOpen);
+    // Terminal search: highlight as you type; Enter = next, Shift+Enter = prev.
+    $('#searchTxt').on('input', function() { termFind(true, true); });
+    $('#searchTxt').on('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); termFind(!e.shiftKey, false); } });
+    $('#matchCaseChb').on('change', function() { termFind(true, true); });
     $('#msg').hide()
     $('#errMsg').hide()
     updateFileBrowserVisibility(false);
@@ -824,12 +828,17 @@ window.onload = function() {
     </script>
     <style>
       :root {
-        --bg: #0d1117;
-        --panel: #161b22;
-        --border: #30363d;
-        --fg: #c9d1d9;
-        --accent: #238636;
-        --accent-hover: #2ea043;
+        --bg: #09090b;          /* zinc-950 */
+        --panel: #18181b;       /* zinc-900 (cards, drawer) */
+        --elevated: #27272a;    /* zinc-800 (inputs, hover) */
+        --border: #27272a;      /* zinc-800 */
+        --fg: #fafafa;          /* zinc-50 */
+        --muted: #a1a1aa;       /* zinc-400 */
+        --accent: #22c55e;      /* green-500 */
+        --accent-hover: #16a34a;/* green-600 */
+        --danger: #ef4444;      /* red-500 */
+        --ring: rgba(34,197,94,.40);
+        --radius: 8px;
       }
       html { height: 100%; overflow: hidden; }
       body {
@@ -888,14 +897,14 @@ window.onload = function() {
         letter-spacing: .3px;
         text-align: center;
       }
-      #connectCard .form-control { background: #0d1117; border-color: var(--border); color: var(--fg); }
-      #connectCard .form-control::placeholder { color: #6e7681; }
-      #connectOverlay .btn-link { color: #58a6ff; }
-      #footerRow { margin-top: 16px; font-size: .72rem; color: #6e7681; text-align: center; }
+      #connectCard .form-control { background: var(--bg); border-color: var(--border); color: var(--fg); }
+      #connectCard .form-control::placeholder { color: var(--muted); }
+      #connectOverlay .btn-link { color: var(--accent); }
+      #footerRow { margin-top: 16px; font-size: .72rem; color: var(--muted); text-align: center; }
 
       /* user @ host : port */
       .conn-id { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
-      .conn-id .sep { color: #6e7681; }
+      .conn-id .sep { color: var(--muted); }
       .conn-id #usrInp { flex: 0 0 30%; }
       .conn-id #hostInp { flex: 1 1 auto; min-width: 0; }
       .conn-id #portInp { flex: 0 0 70px; text-align: center; -moz-appearance: textfield; }
@@ -903,18 +912,18 @@ window.onload = function() {
       /* segmented auth-method selector */
       .auth-tabs {
         display: flex; gap: 4px; padding: 3px; margin-bottom: 12px;
-        background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+        background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
       }
       .auth-tab {
         flex: 1; padding: 7px 0; border: none; border-radius: 6px;
-        background: transparent; color: #8b949e; font-size: .85rem; cursor: pointer;
+        background: transparent; color: var(--muted); font-size: .85rem; cursor: pointer;
       }
       .auth-tab:hover { color: var(--fg); }
-      .auth-tab.active { background: #21262d; color: var(--fg); }
+      .auth-tab.active { background: var(--elevated); color: var(--fg); }
       .auth-pane { display: none; margin-bottom: 14px; }
       .auth-pane.active { display: block; }
       .auth-pane textarea.form-control { resize: vertical; }
-      .file-link { display: inline-block; margin-top: 8px; color: #58a6ff; cursor: pointer; font-size: .82rem; }
+      .file-link { display: inline-block; margin-top: 8px; color: var(--accent); cursor: pointer; font-size: .82rem; }
       .wa-links { margin-top: 8px; }
       .wa-links .btn-link { padding: 0 12px 0 0; font-size: .82rem; }
 
@@ -927,7 +936,7 @@ window.onload = function() {
 
       .conn-extras { margin-top: 16px; font-size: .85rem; }
       .conn-extras details + details { margin-top: 4px; }
-      .conn-extras summary { cursor: pointer; color: #8b949e; padding: 4px 0; outline: none; }
+      .conn-extras summary { cursor: pointer; color: var(--muted); padding: 4px 0; outline: none; }
       .conn-extras summary:hover { color: var(--fg); }
       .adv-row { display: flex; align-items: center; gap: 7px; color: var(--fg); margin: 8px 0 4px; font-size: .85rem; }
 
@@ -986,10 +995,10 @@ window.onload = function() {
         font-size: .8rem;
         text-transform: uppercase;
         letter-spacing: .8px;
-        color: #8b949e;
+        color: var(--muted);
       }
       #panelClose {
-        background: none; border: none; color: #8b949e;
+        background: none; border: none; color: var(--muted);
         font-size: 20px; cursor: pointer; line-height: 1;
       }
       #panelTools {
@@ -1003,19 +1012,19 @@ window.onload = function() {
         width: 100%;
         text-align: left;
         padding: 9px 12px;
-        background: #0d1117;
+        background: var(--bg);
         color: var(--fg);
         border: 1px solid var(--border);
         border-radius: 7px;
         font-size: .88rem;
         cursor: pointer;
       }
-      #panelTools .panel-btn:hover { border-color: #58a6ff; }
-      #panelTools .panel-btn.danger:hover { border-color: #f85149; color: #f85149; }
+      #panelTools .panel-btn:hover { border-color: var(--accent); }
+      #panelTools .panel-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
       .panel-search { display: flex; gap: 6px; }
-      .panel-search .form-control { flex: 1; background: #0d1117; border-color: var(--border); color: var(--fg); }
-      .panel-search-opts { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: #8b949e; }
-      #conInf { font-size: .78rem; color: #8b949e; word-break: break-word; }
+      .panel-search .form-control { flex: 1; background: var(--bg); border-color: var(--border); color: var(--fg); }
+      .panel-search-opts { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); }
+      #conInf { font-size: .78rem; color: var(--muted); word-break: break-word; }
       .rev-item {
         display: flex; align-items: center; justify-content: space-between; gap: 8px;
         padding: 6px 0; font-size: .82rem; border-top: 1px solid var(--border);
@@ -1048,7 +1057,7 @@ window.onload = function() {
         min-width: 0;
         padding: 7px 10px;
         border-radius: 7px;
-        background: #0d1117;
+        background: var(--bg);
         border: 1px solid var(--border);
         color: var(--fg);
         font-size: .85rem;
@@ -1057,18 +1066,33 @@ window.onload = function() {
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      #historyList .hist-target:hover { border-color: #58a6ff; }
+      #historyList .hist-target:hover { border-color: var(--accent); }
       #historyList .hist-del {
         flex: 0 0 auto;
         padding: 7px 10px;
         border-radius: 7px;
         background: transparent;
         border: 1px solid var(--border);
-        color: #8b949e;
+        color: var(--muted);
         font-size: .8rem;
         cursor: pointer;
       }
-      #historyList .hist-del:hover { border-color: #f85149; color: #f85149; }
+      #historyList .hist-del:hover { border-color: var(--danger); color: var(--danger); }
+
+      /* --- shadcn-ish polish: consistent radius, focus rings, soft shadow --- */
+      #connectCard { box-shadow: 0 12px 32px rgba(0,0,0,.55); }
+      .form-control, .connect-btn, .panel-btn, .hist-target, .hist-del { border-radius: var(--radius); }
+      .form-control { transition: border-color .12s ease, box-shadow .12s ease; }
+      .form-control:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+      .connect-btn:focus-visible, .panel-btn:focus-visible,
+      .auth-tab:focus-visible, .hist-target:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring); }
+      .panel-btn { transition: border-color .12s ease, background .12s ease; }
+
+      /* Terminal search: bright matches + a yellow glow on the active one. */
+      .xterm-decoration { border-radius: 2px; }
+      .xterm-decoration.xterm-find-active-result-decoration {
+        box-shadow: 0 0 0 1px #fff200, 0 0 8px 2px rgba(255,230,0,.75);
+      }
 </style>
 </head>
   <body>
@@ -1082,7 +1106,7 @@ window.onload = function() {
                 </button>
               </div>
               <div class="modal-body">
-                <div id="fpWarn" style="display:none; color:#f85149; margin-bottom:.6rem;"></div>
+                <div id="fpWarn" style="display:none; color:var(--danger); margin-bottom:.6rem;"></div>
                 <div id="fingerprintMsg"></div>
               </div>
               <div class="modal-footer">
@@ -1197,7 +1221,7 @@ window.onload = function() {
               <div class="modal-body">
                 <p>Open a port on the remote host that forwards every incoming connection
                   back through this session to a target.</p>
-                <p style="font-size:.85rem;color:#8b949e">The target is dialed from the server side, not your browser.
+                <p style="font-size:.85rem;color:var(--muted)">The target is dialed from the server side, not your browser.
                   To reach a service on the machine running this app's Docker host, use
                   <code>host.docker.internal</code> as the host; for another container use its service name.</p>
                 <div class="form-group row">
@@ -1313,8 +1337,8 @@ window.onload = function() {
         <div id="conInf"></div>
         <div class="panel-search">
           <input id="searchTxt" type="text" placeholder="Find in terminal" class="form-control">
-          <button type="button" class="panel-btn" style="width:auto" onclick="searchAddon.findPrevious($('#searchTxt').val(),{caseSensitive: $('#matchCaseChb').prop('checked')})">↑</button>
-          <button type="button" class="panel-btn" style="width:auto" onclick="searchAddon.findNext($('#searchTxt').val(),{caseSensitive: $('#matchCaseChb').prop('checked')})">↓</button>
+          <button type="button" class="panel-btn" style="width:auto" onclick="termFind(false)">↑</button>
+          <button type="button" class="panel-btn" style="width:auto" onclick="termFind(true)">↓</button>
         </div>
         <label class="panel-search-opts"><input type="checkbox" id="matchCaseChb"> Match case</label>
         <button type="button" class="panel-btn" onclick="$('#forwardModal').modal('show');">Open URL</button>
@@ -1387,6 +1411,29 @@ window.onload = function() {
       document.addEventListener('fullscreenchange', () => setTimeout(refitTerminal, 100));
       document.addEventListener('webkitfullscreenchange', () => setTimeout(refitTerminal, 100));
       if (window.visualViewport) window.visualViewport.addEventListener('resize', refitTerminal);
+
+      // Search highlighting: every match gets a bright background; the active
+      // match (stepped through with the up/down buttons) gets a yellow glow
+      // (see the .xterm-decoration-top CSS). Required ruler colors must be set
+      // for the decorations to render at all.
+      var SEARCH_DECORATIONS = {
+        matchBackground: '#ffd60066',
+        matchOverviewRuler: '#ffd600',
+        activeMatchBackground: '#ffe680',
+        activeMatchBorder: '#ffe600',
+        activeMatchColorOverviewRuler: '#fff200',
+      };
+      function termFind(forward, incremental) {
+        if (typeof searchAddon === 'undefined' || !searchAddon) return;
+        var t = document.getElementById('searchTxt').value;
+        var opts = {
+          caseSensitive: document.getElementById('matchCaseChb').checked,
+          decorations: SEARCH_DECORATIONS,
+        };
+        if (incremental) opts.incremental = true;
+        if (forward) searchAddon.findNext(t, opts);
+        else searchAddon.findPrevious(t, opts);
+      }
 
       // Conservative predictive local echo (Mosh-style), rendered as an HTML
       // overlay ON TOP of xterm.js — it never writes to the terminal's own
