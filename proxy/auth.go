@@ -113,8 +113,16 @@ func initAuth() bool {
 	rawSeed := strings.ToUpper(strings.ReplaceAll(os.Getenv("TOTP_SEED"), " ", ""))
 	secret := os.Getenv("SESSION_SECRET")
 	if rawSeed == "" || secret == "" {
-		log.Print("auth gate DISABLED (set TOTP_SEED and SESSION_SECRET to enable)")
-		return false
+		// Fail closed: serving the client unauthenticated (especially on a
+		// public tunnel) is almost never intended. Require an explicit opt-out
+		// to run without the gate.
+		switch strings.ToLower(strings.TrimSpace(os.Getenv("AUTH_DISABLED"))) {
+		case "1", "true", "yes", "on":
+			log.Print("auth gate DISABLED via AUTH_DISABLED — the site is served with NO authentication")
+			return false
+		}
+		log.Fatal("refusing to start: set TOTP_SEED and SESSION_SECRET to enable the login gate, " +
+			"or AUTH_DISABLED=true to intentionally run with no authentication")
 	}
 
 	var err error

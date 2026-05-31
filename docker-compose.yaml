@@ -15,6 +15,9 @@ services:
       - TOTP_SEED=${TOTP_SEED}
       - SESSION_SECRET=${SESSION_SECRET}
       - SESSION_TTL=${SESSION_TTL:-24h}
+      # Fail closed: the proxy refuses to start without TOTP_SEED + SESSION_SECRET
+      # unless AUTH_DISABLED is explicitly truthy (serves with NO authentication).
+      - AUTH_DISABLED=${AUTH_DISABLED:-}
       # Per-source-IP new-connection limit. The default (1/sec) throttles
       # reverse-proxying short-lived connections; "off" disables it for this
       # private deployment. Set a number (conns/sec) to re-enable.
