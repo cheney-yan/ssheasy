@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 )
 
 // Traffic obfuscation for the proxy <-> WASM client websocket.
@@ -53,17 +54,22 @@ type obfConn struct {
 	psk    string // "" => negotiate via X25519
 	r      cipher.Stream
 	w      cipher.Stream
-	done   bool
+	once   sync.Once
+	hsErr  error
 }
 
 func newObfConn(c net.Conn, server bool, psk string) *obfConn {
 	return &obfConn{Conn: c, server: server, psk: psk}
 }
 
+// handshake runs once, even if Read and Write race to trigger it (yamux drives
+// each from a separate goroutine).
 func (o *obfConn) handshake() error {
-	if o.done {
-		return nil
-	}
+	o.once.Do(func() { o.hsErr = o.doHandshake() })
+	return o.hsErr
+}
+
+func (o *obfConn) doHandshake() error {
 	var secret []byte
 	var err error
 	if o.psk != "" {
@@ -86,7 +92,6 @@ func (o *obfConn) handshake() error {
 	} else {
 		o.r, o.w = down, up
 	}
-	o.done = true
 	return nil
 }
 

@@ -288,25 +288,42 @@ func writeToConsole(str string) {
 }
 
 func con(host string, port int, bypassProxy bool) (net.Conn, error) {
+	if bypassProxy {
+		// Direct connection to a real SSH server: no ssheasy proxy on the other
+		// end to de-obfuscate or multiplex, so leave the stream untouched.
+		l := js.Global().Get("window").Get("location")
+		wsProtocol := "wss://"
+		if l.Get("protocol").String() == "http:" {
+			wsProtocol = "ws://"
+		}
+		conn, err := ws.Dial(wsProtocol + host + ":" + strconv.FormatInt(int64(port), 10))
+		if err != nil {
+			return nil, fmt.Errorf("failed to open ws: %v", err)
+		}
+		return conn, nil
+	}
+
+	// Default: multiplex this connection as a stream over the shared session.
+	// Fall back to a dedicated /p connection if the mux session can't be set up.
+	if c, err := dialMuxed(host, port); err == nil {
+		return c, nil
+	} else {
+		log.Printf("mux dial failed, using a dedicated connection: %v", err)
+	}
+	return conLegacy(host, port)
+}
+
+// conLegacy opens a dedicated obfuscated /p websocket for one connection (the
+// pre-mux behaviour, kept as a fallback).
+func conLegacy(host string, port int) (net.Conn, error) {
 	l := js.Global().Get("window").Get("location")
 	wsProtocol := "wss://"
 	if l.Get("protocol").String() == "http:" {
 		wsProtocol = "ws://"
 	}
-	url := wsProtocol + l.Get("host").String() + "/p"
-	if bypassProxy {
-		url = wsProtocol + host + ":" + strconv.FormatInt(int64(port), 10)
-	}
-
-	conn, err := ws.Dial(url)
+	conn, err := ws.Dial(wsProtocol + l.Get("host").String() + "/p")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open ws: %v", err)
-	}
-
-	if bypassProxy {
-		// Direct connection to a real SSH server: no ssheasy proxy on the other
-		// end to de-obfuscate, so leave the stream untouched.
-		return conn, nil
 	}
 
 	// Obfuscate everything sent to the ssheasy proxy (connection header + SSH

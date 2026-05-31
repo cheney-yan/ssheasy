@@ -60,6 +60,9 @@ func main() {
 	// /ws is kept for backwards compatibility.
 	r.Handle("/p", wmux)
 	r.Handle("/ws", wmux)
+	// /pm carries a yamux-multiplexed session: many connections share one
+	// obfuscated websocket (default path; /p is the per-connection fallback).
+	r.Handle("/pm", websocket.Server{Handshake: bootHandshake, Handler: handleMuxWss})
 	// Static site, with SPA fallback to index.html for unknown paths.
 	r.PathPrefix("/").Handler(spaFileServer(Dir("./html")))
 
