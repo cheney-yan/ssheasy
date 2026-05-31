@@ -212,7 +212,6 @@ func main() {
 	js.Global().Set("changeWindowSize", wc)
 	initFileBrowserAPI()
 	js.Global().Set("parsePublicKey", parsePublicKey)
-	js.Global().Set("forward", js.FuncOf(forward))
 	js.Global().Set("reverseForward", js.FuncOf(reverseForward))
 	js.Global().Set("stopReverseForward", js.FuncOf(stopReverseForward))
 
