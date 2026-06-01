@@ -987,6 +987,20 @@ window.onload = function() {
         transition: opacity 0.15s, transform 0.15s;
       }
       #uploadToast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+      .fwd-diagram {
+        margin: 0 0 .8rem;
+        padding: 10px 12px;
+        border: 1px solid var(--border, #444);
+        border-radius: var(--radius, 8px);
+        background: var(--muted-bg, rgba(127,127,127,.08));
+        color: var(--foreground, #eee);
+        font-family: var(--font-mono, monospace);
+        font-size: .8rem;
+        line-height: 1.35;
+        white-space: pre;
+        overflow-x: auto;
+      }
+      .fwd-diagram b { color: var(--primary, #4ea1ff); font-weight: 600; }
       #dropOverlayMsg {
         border: 2px dashed var(--border, #444);
         border-radius: var(--radius, 8px);
@@ -1410,28 +1424,39 @@ window.onload = function() {
           <div class="modal-dialog" role="document">
             <div class="modal-content">
               <div class="modal-header">
-                <h5 class="modal-title">Use this browser as a reverse proxy</h5>
+                <h5 class="modal-title">Remote port forwarding</h5>
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                   <span aria-hidden="true">&times;</span>
                 </button>
               </div>
               <div class="modal-body">
-                <p>Give the remote host access to a service that <b>this side</b> can reach,
-                  by opening a port on the remote that tunnels back through this session.</p>
-                <p style="font-size:.85rem;color:var(--muted)">
-                  <b>Example:</b> this side can reach Ollama at <code>ollama:11434</code>, but the
-                  remote can't. Set <b>Target</b> = <code>ollama</code> / <code>11434</code> and
-                  <b>Remote port</b> = <code>11434</code>. Now on the remote,
-                  <code>curl http://localhost:11434</code> reaches Ollama through this proxy.
+                <p style="margin-bottom:.6rem">
+                  Open a port <b>on the remote host</b> and tunnel everything it
+                  receives back through this session to a <b>target this side can
+                  reach</b>. Use it to expose a local-only service to the remote.
                 </p>
-                <p style="font-size:.8rem;color:var(--muted)">
-                  The target is dialed from this server; to reach a service on its Docker host use
-                  <code>host.docker.internal</code>, or another container's service name.
+
+                <!-- Flow diagram: makes the direction of traffic unmistakable. -->
+                <pre class="fwd-diagram">app on remote ─▶ <b>remote:PORT</b>
+                  │
+        (this SSH session, reverse tunnel)
+                  ▼
+        <b>target host : target port</b>  ◀─ dialed from this proxy</pre>
+
+                <p style="font-size:.82rem;color:var(--muted);margin-bottom:.8rem">
+                  <b>Example:</b> this side can reach a model server at
+                  <code>ollama:11434</code> but the remote can't. Set
+                  <b>Remote port</b> = <code>11434</code>, <b>Target</b> =
+                  <code>ollama</code> / <code>11434</code>. Then on the remote,
+                  <code>curl localhost:11434</code> reaches it through the tunnel.
+                  Targets are dialed from this proxy — for a service on its Docker
+                  host use <code>host.docker.internal</code>, or a container name.
                 </p>
+
                 <div class="form-group row">
                   <label class="col-sm-4 col-form-label">Remote port</label>
                   <div class="col-sm-8">
-                    <input id="revRemotePort" type="number" class="form-control" placeholder="port to open on the remote, e.g. 8080">
+                    <input id="revRemotePort" type="number" class="form-control" placeholder="port to open on the remote, e.g. 11434">
                   </div>
                 </div>
                 <div class="form-group row">
@@ -1443,13 +1468,13 @@ window.onload = function() {
                 <div class="form-group row">
                   <label class="col-sm-4 col-form-label">Target port</label>
                   <div class="col-sm-8">
-                    <input id="revTargetPort" type="number" class="form-control" placeholder="port on the target, e.g. 3000">
+                    <input id="revTargetPort" type="number" class="form-control" placeholder="port on the target, e.g. 11434">
                   </div>
                 </div>
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" id="revBindAll">
                   <label class="form-check-label" for="revBindAll" title="Bind 0.0.0.0 on the remote; the server must allow it (GatewayPorts).">
-                    Expose on all interfaces of the remote host
+                    Expose on all interfaces of the remote host (needs GatewayPorts)
                   </label>
                 </div>
                 <div id="revStatus" class="mt-2"></div>
@@ -1569,7 +1594,7 @@ window.onload = function() {
           <button type="button" class="panel-btn" style="width:auto" onclick="termFind(true)">↓</button>
         </div>
         <label class="panel-search-opts"><input type="checkbox" id="matchCaseChb"> Match case</label>
-        <button type="button" class="panel-btn" onclick="openReverseModal();">Reverse proxy</button>
+        <button type="button" class="panel-btn" onclick="openReverseModal();">Port forwarding</button>
         <button id="toggleFileBrowserBtn" type="button" class="panel-btn">Show Files</button>
         <button type="button" class="panel-btn" onclick="toggleFullScreen();">Toggle Fullscreen</button>
         <button type="button" class="panel-btn" onclick="downloadHistory('session.txt');" title="Download the session output">Download session log</button>
