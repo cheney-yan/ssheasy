@@ -19,20 +19,18 @@ func init() {
 // (default "python3"); index.html and the manifest carry an __APP_NAME__
 // placeholder that is substituted once at startup.
 var (
-	appName         = "python3"
-	brandedIndex    []byte
-	brandedManifest []byte
+	appName      = "python3"
+	brandedFiles = map[string][]byte{} // "/path" -> APP_NAME-substituted content
 )
 
 func loadBranding(htmlDir string) {
 	if v := strings.TrimSpace(os.Getenv("APP_NAME")); v != "" {
 		appName = v
 	}
-	if b, err := os.ReadFile(filepath.Join(htmlDir, "index.html")); err == nil {
-		brandedIndex = []byte(strings.ReplaceAll(string(b), "__APP_NAME__", appName))
-	}
-	if b, err := os.ReadFile(filepath.Join(htmlDir, "manifest.webmanifest")); err == nil {
-		brandedManifest = []byte(strings.ReplaceAll(string(b), "__APP_NAME__", appName))
+	for _, f := range []string{"index.html", "manifest.webmanifest", "webauthn.html"} {
+		if b, err := os.ReadFile(filepath.Join(htmlDir, f)); err == nil {
+			brandedFiles["/"+f] = []byte(strings.ReplaceAll(string(b), "__APP_NAME__", appName))
+		}
 	}
 }
 
@@ -47,29 +45,35 @@ func spaFileServer(root FileSystem) http.Handler {
 			upath = "/" + upath
 		}
 		name := path.Clean(upath)
+		if name == "/" {
+			name = "/index.html"
+		}
 
-		if name == "/manifest.webmanifest" && brandedManifest != nil {
-			w.Header().Set("Content-Type", "application/manifest+json")
-			w.Write(brandedManifest)
+		// Branded files (index.html, manifest, webauthn.html) — APP_NAME applied.
+		if b, ok := brandedFiles[name]; ok {
+			if strings.HasSuffix(name, ".webmanifest") {
+				w.Header().Set("Content-Type", "application/manifest+json")
+			} else {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			}
+			w.Write(b)
 			return
 		}
 
-		// Real on-disk file (but never the raw index.html — that's branded).
-		if name != "/" && name != "/index.html" {
-			if f, err := root.Open(name); err == nil {
-				st, serr := f.Stat()
-				f.Close()
-				if serr == nil && !st.IsDir() {
-					fs.ServeHTTP(w, r)
-					return
-				}
+		// Real on-disk file (index.html is always branded, handled above).
+		if f, err := root.Open(name); err == nil {
+			st, serr := f.Stat()
+			f.Close()
+			if serr == nil && !st.IsDir() {
+				fs.ServeHTTP(w, r)
+				return
 			}
 		}
 
-		// Branded SPA entrypoint for "/", "/index.html", and unknown paths.
-		if brandedIndex != nil {
+		// Unknown path: fall back to the branded SPA entrypoint.
+		if b, ok := brandedFiles["/index.html"]; ok {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Write(brandedIndex)
+			w.Write(b)
 			return
 		}
 		// Fallback if branding didn't load: serve index.html straight from disk.

@@ -27,7 +27,7 @@ import (
 	"time"
 )
 
-const cookieName = "ssheasy_session"
+const cookieName = "session"
 
 var (
 	gateEnabled bool
