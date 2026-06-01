@@ -87,29 +87,44 @@ proxy are built inside the image.
 
 ```bash
 git clone <this-repo> && cd <this-repo>
-cp .env.example .env        # then edit .env (see below)
+cp .env.example .env
+
+# Generate both secrets and write them into .env (works on macOS + Linux):
+SEED=$(head -c20 /dev/urandom | base32 | tr -d '=')
+sed -i.bak \
+  -e "s|^TOTP_SEED=.*|TOTP_SEED=$SEED|" \
+  -e "s|^SESSION_SECRET=.*|SESSION_SECRET=$(openssl rand -hex 32)|" \
+  .env && rm -f .env.bak
+
+# Print the setup URL for your phone (and a scannable QR if `qrencode` exists):
+URL="otpauth://totp/python3?secret=$SEED&issuer=python3"
+echo "$URL"; command -v qrencode >/dev/null && qrencode -t ANSIUTF8 "$URL"
+
 docker compose up -d --build
 ```
 
-Open **http://localhost:5555**, enter your authenticator code (if the gate is
-enabled), then fill in host / port / user / password (or key) and connect.
+Then **add the code to your phone** (see below), open
+**http://localhost:5555**, enter the 6-digit code, and fill in host / port /
+user / password (or key) to connect.
+
+### Add the 2FA code to your phone
+
+The login gate is a standard TOTP (the same kind GitHub / Google use). On your
+phone, open any authenticator app — **Google Authenticator, Microsoft
+Authenticator, Authy, or 1Password** — and either:
+
+- **Scan the QR code** the command above printed, or
+- Choose **"Enter a setup key"** and paste the `TOTP_SEED` value from `.env`
+  (account name: anything; type: **time-based**).
+
+The app then shows a 6-digit code that rotates every 30s — that's what you type
+on the login page. A session lasts `SESSION_TTL` (default 24h) before you're
+asked again.
 
 ### Just trying it locally?
 
-Skip the login gate by setting `AUTH_DISABLED=true` in `.env` — then the only
-required value is empty. **Never do this on a public deployment.**
-
-### Enabling the login gate
-
-Generate the two secrets and add them to `.env`:
-
-```bash
-# TOTP seed — also add this to Google Authenticator / Authy / 1Password
-head -c20 /dev/urandom | base32 | tr -d '='
-
-# Session cookie signing key
-openssl rand -hex 32
-```
+Skip the login gate entirely by setting `AUTH_DISABLED=true` in `.env` (no
+secrets needed). **Never do this on a public deployment.**
 
 The proxy **fails to start** if `TOTP_SEED` / `SESSION_SECRET` are missing
 (unless `AUTH_DISABLED=true`), so you can't accidentally publish an open client.
