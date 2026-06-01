@@ -7,9 +7,15 @@
     <script>try{var __t=localStorage.getItem('theme');if(__t)document.documentElement.setAttribute('data-theme',__t);}catch(e){}
     window.APP_NAME="__APP_NAME__";</script>
 
+    <!-- UI typography: Inter Tight (interface) + Geist Mono (code/mono).
+         The terminal keeps its own Nerd Font for prompt glyphs. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
     <!-- PWA: installable web app -->
     <link rel="manifest" href="manifest.webmanifest" />
-    <meta name="theme-color" content="#09090b" />
+    <meta name="theme-color" content="#1b1815" />
     <link rel="icon" href="favicon.ico" sizes="any" />
     <link rel="icon" type="image/svg+xml" href="icon.svg" />
     <link rel="apple-touch-icon" href="icon-192.png" />
@@ -896,35 +902,47 @@ window.onload = function() {
 
     </script>
     <style>
+      /* DESIGNED.md design system: warm dark palette, accent red, Inter Tight. */
       :root {
-        --bg: #09090b;          /* zinc-950 */
-        --panel: #18181b;       /* zinc-900 (cards, drawer) */
-        --elevated: #27272a;    /* zinc-800 (inputs, hover) */
-        --border: #27272a;      /* zinc-800 */
-        --fg: #fafafa;          /* zinc-50 */
-        --muted: #a1a1aa;       /* zinc-400 */
-        --accent: #fafafa;      /* shadcn primary (near-white) */
-        --accent-hover: #e4e4e7;/* zinc-200 */
-        --accent-fg: #18181b;   /* text on the primary button */
-        --danger: #ef4444;      /* red-500 */
-        --ring: rgba(250,250,250,.30);
-        --radius: 8px;
+        --bg: #1b1815;          /* background dark */
+        --panel: #15130f;       /* surface (cards, drawer) */
+        --elevated: #221e19;    /* inputs / hover surface */
+        --border: #2a2620;      /* border */
+        --fg: #f2eadd;          /* text inverse (primary) */
+        --muted: #a89f92;       /* muted text (lightened from #8b847a for AA on dark surfaces) */
+        --accent: #c7472a;      /* accent red — primary actions */
+        --accent-hover: #a8442d;
+        --accent-fg: #fff8ee;   /* text on the primary button */
+        --accent2: #533afd;     /* accent purple — secondary highlights */
+        --danger: #c7472a;      /* destructive == accent red */
+        --ring: rgba(199,71,42,.30);
+        --radius: 6px;
+        /* Aliases for components that reference semantic names. */
+        --background: var(--bg);
+        --foreground: var(--fg);
+        --card: var(--panel);
+        --primary: var(--accent);
+        --muted-bg: rgba(242,234,221,.06);
+        --font-ui: 'Inter Tight', system-ui, -apple-system, Arial, sans-serif;
+        --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
       }
-      /* Light theme (shadcn zinc light), toggled via data-theme on <html>. */
+      /* Light theme (warm paper), toggled via data-theme on <html>. */
       :root[data-theme="light"] {
-        --bg: #ffffff;
+        --bg: #fff8ee;
         --panel: #ffffff;
-        --elevated: #f4f4f5;    /* zinc-100 */
-        --border: #e4e4e7;      /* zinc-200 */
-        --fg: #09090b;
-        --muted: #71717a;       /* zinc-500 */
-        --accent: #18181b;      /* near-black primary */
-        --accent-hover: #27272a;
-        --accent-fg: #fafafa;   /* white text on the primary */
-        --danger: #dc2626;
-        --ring: rgba(24,24,27,.22);
+        --elevated: #f3ece0;
+        --border: #e6ddcd;
+        --fg: #1b1815;
+        --muted: #6f675c;
+        --accent: #c7472a;
+        --accent-hover: #a8442d;
+        --accent-fg: #fff8ee;
+        --accent2: #533afd;
+        --danger: #c7472a;
+        --ring: rgba(199,71,42,.22);
+        --muted-bg: rgba(27,24,21,.05);
       }
-      :root[data-theme="light"] #connectOverlay { background: rgba(244,244,245,.85); }
+      :root[data-theme="light"] #connectOverlay { background: rgba(255,248,238,.85); }
       html { height: 100%; overflow: hidden; }
       body {
         height: 100vh;
@@ -932,7 +950,15 @@ window.onload = function() {
         overflow: hidden;
         background: var(--bg);
         color: var(--fg);
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--font-ui);
+      }
+      code, kbd, pre { font-family: var(--font-mono); }
+      code {
+        background: var(--muted-bg);
+        color: var(--accent);
+        border-radius: 4px;
+        padding: .08em .35em;
+        font-size: .9em;
       }
 
       /* --- Full-screen terminal layer (always fills the viewport) --- */
@@ -942,7 +968,7 @@ window.onload = function() {
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        background: #000;
+        background: var(--panel);
       }
       #termContainer {
         flex: 1 1 auto;
@@ -1031,14 +1057,14 @@ window.onload = function() {
         background: var(--panel);
         border: 1px solid var(--border);
         border-radius: 12px;
-        padding: 22px;
-        box-shadow: 0 16px 48px rgba(0,0,0,.5);
+        padding: 24px;
+        box-shadow: rgba(0,0,0,.6) 0 18px 40px -22px, rgba(199,71,42,.22) 0 6px 24px -10px;
       }
       #connectCard h1 {
-        font-size: 1.1rem;
+        font-size: 1.6rem;
         font-weight: 600;
-        margin: 0 0 18px;
-        letter-spacing: .3px;
+        margin: 0 0 20px;
+        letter-spacing: -.01em;
         text-align: center;
       }
       #connectCard .form-control { background: var(--bg); border-color: var(--border); color: var(--fg); }
@@ -1322,6 +1348,18 @@ window.onload = function() {
       .modal .close { color: var(--muted); text-shadow: none; opacity: 1; }
       .modal .close:hover { color: var(--fg); }
       .modal-body code { color: var(--fg); }
+
+      /* Status / error alerts themed to the palette (Bootstrap defaults blue/pink). */
+      #connectCard .alert {
+        border-radius: var(--radius); border: 1px solid var(--border);
+        font-size: .85rem; padding: 8px 12px; margin-bottom: 14px;
+      }
+      #connectCard .alert:empty { display: none; }
+      #connectCard .alert-primary { background: var(--muted-bg); color: var(--fg); border-color: var(--border); }
+      #connectCard .alert-danger {
+        background: color-mix(in srgb, var(--danger) 14%, transparent);
+        color: var(--accent); border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+      }
 </style>
 </head>
   <body>
@@ -1627,7 +1665,7 @@ window.onload = function() {
           // The active search match is the terminal selection; colour it black
           // text on yellow so it's clearly readable (the search addon can't
           // recolour matched glyphs itself).
-          theme: { selectionBackground: '#ffd600', selectionForeground: '#000000' },
+          theme: { background: '#15130f', foreground: '#f2eadd', cursor: '#c7472a', cursorAccent: '#15130f', selectionBackground: '#ffd600', selectionForeground: '#000000' },
         });
         term.loadAddon(new WebLinksAddon.WebLinksAddon());
         fitAddon = new FitAddon.FitAddon(); // Initialize the shared fitAddon
