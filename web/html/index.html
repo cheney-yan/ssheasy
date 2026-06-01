@@ -77,6 +77,7 @@ window.onload = function() {
     go.run(instance);
     handleConnectFromQuery();
   });
+  setupDragDropUpload();
   notReady = function() {
     return  $("portInp").val() == "" || $('#hostInp').val() == "" || $('#usrInp').val() == "" ||
       ($('#passInp').val() == "" && $('#pkInp').val() == "" && $('#webauthnKeySelect').val() == -1) 
@@ -513,6 +514,102 @@ window.onload = function() {
     $('#errMsg').html(msg);
   }
 
+  // Drag a file from the OS onto the window to scp it to ~/Downloads on the
+  // remote (the WASM creates the directory if missing). Only active on a live
+  // SFTP session; the overlay never blocks input otherwise.
+  function setupDragDropUpload() {
+    var depth = 0;
+    var overlay = document.getElementById('dropOverlay');
+    var msg = document.getElementById('dropOverlayMsg');
+    function active() { return window.__sshConnected && window.__sftpAvailable && typeof sftpUploadToDownloads === 'function'; }
+    function hasFiles(e) {
+      if (!e.dataTransfer || !e.dataTransfer.types) return false;
+      return Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') !== -1;
+    }
+    // Always intercept file drags so the browser never navigates to / opens the
+    // dropped file. Whether we actually upload is decided on drop.
+    window.addEventListener('dragenter', function(e) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth++;
+      msg.textContent = active()
+        ? 'Drop files to copy to ~/Downloads'
+        : 'Connect to a session first to upload files';
+      overlay.classList.add('show');
+    }, true);
+    window.addEventListener('dragover', function(e) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = active() ? 'copy' : 'none';
+    }, true);
+    window.addEventListener('dragleave', function(e) {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) overlay.classList.remove('show');
+    }, true);
+    window.addEventListener('drop', function(e) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      overlay.classList.remove('show');
+      if (!active()) { showToast('Connect to a session first to upload files'); return; }
+      var files = e.dataTransfer.files;
+      if (!files || !files.length) return;
+      uploadDroppedFiles(Array.prototype.slice.call(files));
+    }, true);
+  }
+
+  function uploadDroppedFiles(files) {
+    var total = files.length, done = 0, failed = 0, paths = [];
+    showToast('Uploading ' + total + ' file' + (total > 1 ? 's' : '') + ' to ~/Downloads…');
+    function finish() {
+      if (done !== total) return;
+      if (failed === 0) {
+        if (paths.length === 1) showToast('Uploaded to ' + paths[0]);
+        else showToast('Uploaded ' + paths.length + ' files:\n' + paths.join('\n'));
+      } else {
+        var ok = paths.length ? ('\nUploaded:\n' + paths.join('\n')) : '';
+        showToast(failed + '/' + total + ' upload(s) failed — see console' + ok);
+      }
+    }
+    files.forEach(function(file) {
+      var reader = new FileReader();
+      reader.onload = function() {
+        var data = new Uint8Array(reader.result);
+        sftpUploadToDownloads(file.name, data, function(resp) {
+          done++;
+          if (resp && resp.success) {
+            paths.push(resp.path || ('~/Downloads/' + (resp.name || file.name)));
+          } else {
+            failed++;
+            console.error('upload failed for ' + file.name + ': ' + (resp && resp.error));
+          }
+          finish();
+        });
+      };
+      reader.onerror = function() {
+        done++; failed++;
+        console.error('could not read ' + file.name);
+        finish();
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  // Lightweight transient status line reusing the disconnect banner styling.
+  function showToast(msg) {
+    var el = document.getElementById('uploadToast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'uploadToast';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(function() { el.classList.remove('show'); }, 6000);
+  }
+
   makeTermFullScreen = function(){
     element = $('#termContainer').get(0);
     if (element.requestFullscreen) {
@@ -854,6 +951,51 @@ window.onload = function() {
         flex-direction: column;
       }
       #terminal { padding: 6px 8px; }
+
+      /* --- Drag-and-drop upload overlay --- */
+      #dropOverlay {
+        position: fixed;
+        inset: 0;
+        z-index: 4000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: color-mix(in srgb, var(--background, #000) 70%, transparent);
+        backdrop-filter: blur(3px);
+        pointer-events: none;
+      }
+      #dropOverlay.show { display: flex; }
+      #uploadToast {
+        position: fixed;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%) translateY(8px);
+        z-index: 4100;
+        max-width: 90vw;
+        padding: 8px 14px;
+        border: 1px solid var(--border, #444);
+        border-radius: var(--radius, 8px);
+        background: var(--card, #111);
+        color: var(--foreground, #eee);
+        font-family: var(--font-mono, monospace);
+        font-size: 0.85rem;
+        white-space: pre-line;
+        word-break: break-all;
+        text-align: left;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s, transform 0.15s;
+      }
+      #uploadToast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+      #dropOverlayMsg {
+        border: 2px dashed var(--border, #444);
+        border-radius: var(--radius, 8px);
+        padding: 28px 40px;
+        font-family: var(--font-mono, monospace);
+        font-size: 1rem;
+        color: var(--foreground, #eee);
+        background: var(--card, #111);
+      }
 
       /* --- Centered connect card, shown before a session is live --- */
       #connectOverlay {
@@ -1349,6 +1491,10 @@ window.onload = function() {
         </div>
       </div>
     </div>
+
+    <!-- Drag-and-drop upload overlay: shown while a file is dragged over a
+         live session; dropped files are scp'd to ~/Downloads on the remote. -->
+    <div id="dropOverlay"><div id="dropOverlayMsg">Drop files to copy to ~/Downloads</div></div>
 
     <!-- Connect card: a centered overlay shown before a session is live. -->
     <div id="connectOverlay">

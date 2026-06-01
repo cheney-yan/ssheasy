@@ -127,6 +127,7 @@ func initFileBrowserAPI() {
 	js.Global().Set("sftpCreateFolder", js.FuncOf(createFolder))
 	js.Global().Set("sftpChangePermission", js.FuncOf(changePerm))
 	js.Global().Set("sftpUpload", js.FuncOf(upload))
+	js.Global().Set("sftpUploadToDownloads", js.FuncOf(uploadToDownloads))
 	js.Global().Set("sftpDownload", js.FuncOf(download))
 	js.Global().Set("sftpMultipleDownload", js.FuncOf(downloadMultiple))
 }
@@ -500,6 +501,77 @@ func upload(this js.Value, args []js.Value) interface{} {
 		}
 		f.Close()
 		apiResponse(cb, nil)
+	}()
+	return nil
+}
+
+// uploadToDownloads scp's a dragged-in file to ~/Downloads on the remote,
+// creating the directory if it doesn't exist. Args: (fileName, data, cb).
+func uploadToDownloads(this js.Value, args []js.Value) interface{} {
+	if sftpClient == nil {
+		log.Printf("no sftp client")
+		return nil
+	}
+	if len(args) < 3 {
+		log.Printf("uploadToDownloads wrong args")
+		return nil
+	}
+	d := uint8Array.New(args[1])
+	data := make([]byte, d.Get("byteLength").Int())
+	js.CopyBytesToGo(data, d)
+	go func() {
+		fileName := args[0].String()
+		cb := args[2]
+
+		// Resolve ~/Downloads. RealPath(".") canonicalizes to the home dir.
+		home, err := sftpClient.RealPath(".")
+		if err != nil {
+			log.Printf("failed to resolve home: %v", err)
+			apiResponse(cb, err)
+			return
+		}
+		dst := filepath.Join(home, "Downloads")
+		if err := sftpClient.MkdirAll(dst); err != nil {
+			log.Printf("failed to create %s: %v", dst, err)
+			apiResponse(cb, err)
+			return
+		}
+
+		// Avoid clobbering an existing file by suffixing a counter.
+		files, err := sftpClient.ReadDir(dst)
+		if err != nil {
+			log.Printf("failed to ReadDir %s: %v", dst, err)
+			apiResponse(cb, err)
+			return
+		}
+		if !isUnique(fileName, files) {
+			for i := 1; i < 10000; i++ {
+				nfn := fmt.Sprintf("%s.%d", fileName, i)
+				if isUnique(nfn, files) {
+					fileName = nfn
+					break
+				}
+			}
+		}
+
+		f, err := sftpClient.Create(filepath.Join(dst, fileName))
+		if err != nil {
+			log.Printf("failed to create file %s: %v", filepath.Join(dst, fileName), err)
+			apiResponse(cb, err)
+			return
+		}
+		if _, err = f.Write(data); err != nil {
+			f.Close()
+			log.Printf("failed to write file %s: %v", filepath.Join(dst, fileName), err)
+			apiResponse(cb, err)
+			return
+		}
+		f.Close()
+		full := filepath.Join(dst, fileName)
+		log.Printf("uploaded %d bytes to %s", len(data), full)
+		// Report the final remote path back so the UI can show where the file
+		// landed (the name may have been changed to avoid a collision).
+		cb.Invoke(map[string]interface{}{"success": true, "error": nil, "path": full, "name": fileName}, 200)
 	}()
 	return nil
 }
