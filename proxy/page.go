@@ -14,7 +14,7 @@ func loginPage(msg string) string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Authentication required</title>
+<title>` + html.EscapeString(appName) + `</title>
 <script>try{var __t=localStorage.getItem('theme');if(__t)document.documentElement.setAttribute('data-theme',__t);}catch(e){}</script>
 <style>
   :root { --bg:#09090b; --panel:#18181b; --border:#27272a; --fg:#fafafa; --muted:#a1a1aa;

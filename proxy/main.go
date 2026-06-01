@@ -51,6 +51,7 @@ func main() {
 
 	startAdmin(*adminAddr, *adminKey)
 	initAuth()
+	loadBranding("html") // substitute APP_NAME into index.html + manifest
 
 	r := mux.NewRouter()
 	// TOTP login gate (no-op unless TOTP_SEED + SESSION_SECRET are set).

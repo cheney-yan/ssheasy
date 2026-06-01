@@ -68,6 +68,11 @@ The app is an installable PWA branded **"python3"** to hide its SSH nature.
 manifest, modal copy, WebAuthn RP name). `web/html/sw.js` does **network-first
 offline caching only** (the old `/portforward` "Open URL" tunneling was removed).
 
+The displayed name is **white-labelled** via `APP_NAME` (default `python3`):
+`index.html` and `manifest.webmanifest` carry an `__APP_NAME__` placeholder that
+`loadBranding` substitutes once at startup; the WebAuthn RP name and login page
+title use it too (via an injected `window.APP_NAME`). Don't hardcode the name.
+
 UI is shadcn-style mono dark with a light theme. Colours come from CSS tokens in
 `:root` (and `:root[data-theme="light"]`); the theme is toggled by setting
 `data-theme` on `<html>`, persisted in `localStorage`, and applied by a tiny

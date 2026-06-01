@@ -3,19 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <!-- Apply the saved theme before first paint to avoid a flash. -->
-    <script>try{var __t=localStorage.getItem('theme');if(__t)document.documentElement.setAttribute('data-theme',__t);}catch(e){}</script>
+    <!-- Apply the saved theme before first paint; expose the white-label name. -->
+    <script>try{var __t=localStorage.getItem('theme');if(__t)document.documentElement.setAttribute('data-theme',__t);}catch(e){}
+    window.APP_NAME="__APP_NAME__";</script>
 
     <!-- PWA: installable web app -->
     <link rel="manifest" href="manifest.webmanifest" />
-    <meta name="theme-color" content="var(--bg)" />
+    <meta name="theme-color" content="#09090b" />
     <link rel="icon" href="favicon.ico" sizes="any" />
     <link rel="icon" type="image/svg+xml" href="icon.svg" />
     <link rel="apple-touch-icon" href="icon-192.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="python3" />
-    <title>python3</title>
+    <meta name="apple-mobile-web-app-title" content="__APP_NAME__" />
+    <title>__APP_NAME__</title>
 
     <!-- Self-hosted JetBrainsMono Nerd Font (Mono): a patched build that bundles
          Powerline separators and the full Nerd Font icon set, so prompts that
@@ -371,7 +372,7 @@ window.onload = function() {
           challenge: Uint8Array.from(
             window.crypto.randomUUID(), c => c.charCodeAt(0)),
           rp: {
-              name: "python3",
+              name: (window.APP_NAME || "python3"),
               id: window.location.hostname,
           },
           user: {
@@ -1353,7 +1354,7 @@ window.onload = function() {
     <div id="connectOverlay">
       <div id="connectCard">
         <button type="button" class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark"></button>
-        <h1>python3</h1>
+        <h1>__APP_NAME__</h1>
         <div id="headerRow">
           <div id="msg" class="alert alert-primary" role="alert"></div>
           <div id="errMsg" class="alert alert-danger" role="alert"></div>
